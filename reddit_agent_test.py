@@ -127,54 +127,24 @@ class RedditScraper:
         self,
         location: str,
         trade: str = "contractor",
-        include_general: bool = True
+        include_general: bool = False
     ) -> List[Dict]:
-        """
-        Find contractor leads for a specific location and trade
-        
-        Args:
-            location: City/area (e.g., "North Port", "Sarasota")
-            trade: Type of contractor (electrician, plumber, etc.)
-            include_general: Also search general contractor terms
-        
-        Returns:
-            List of potential lead posts
-        """
-        # Build subreddit list based on location
-        # TODO: Smart location-to-subreddit mapping
-        subreddits = self._get_subreddits_for_location(location)
-        
-        # Build search queries
-        queries = [
-            f"ISO {trade}",  # "In search of"
-            f"looking for {trade}",
-            f"need {trade}",
-            f"recommend {trade}",
-            f"does anyone know {trade}",
-        ]
-        
-        if include_general:
-            queries.extend([
-                "ISO contractor",
-                "need contractor",
-                "recommend contractor",
-            ])
+        """SIMPLIFIED TEST VERSION - Only searches r/sarasota with 2 queries"""
+        subreddits = ["sarasota"]  # Just one subreddit
+        queries = [f"ISO {trade}", f"need {trade}"]  # Just 2 queries
         
         all_leads = []
         seen_urls = set()
-        
+
         for query in queries:
             for subreddit in subreddits:
                 results = self.search_subreddit(subreddit, query, limit=10)
-                
-                # Deduplicate by URL
                 for result in results:
                     if result['url'] not in seen_urls:
                         seen_urls.add(result['url'])
                         all_leads.append(result)
-                
-                time.sleep(2)  # Rate limiting
-        
+                time.sleep(2)
+
         log.info(f"Found {len(all_leads)} unique leads for '{trade}' in {location}")
         return all_leads
     

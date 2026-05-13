@@ -267,14 +267,11 @@ def dashboard():
     user = User.query.get(session["user_id"])
     
     # Get user's leads
-    # Show all leads for admin
-    if user.email == "admin@contractor.app":
-        leads = Lead.query.filter(Lead.active == True).order_by(Lead.scraped_at.desc()).all()
-    else:
-        leads = Lead.query.filter(
-            Lead.active == True,
-            Lead.keyword == user.trade,
-        ).order_by(Lead.scraped_at.desc()).limit(50).all()
+    leads = Lead.query.filter(
+        Lead.active == True,
+        Lead.keyword == user.trade,  # Match user's trade
+        # TODO: Add location filtering
+    ).order_by(Lead.scraped_at.desc()).limit(50).all()
     
     stats = {
         "new_leads": Lead.query.filter_by(status="new").count(),

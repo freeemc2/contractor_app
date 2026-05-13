@@ -257,7 +257,7 @@ class RedditAgent:
             response = requests.get(url, params=params, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                return data if data.get("job_id") else None
+                return data.get("job")
         except Exception as e:
             log.error(f"Poll failed: {e}")
         
@@ -284,7 +284,7 @@ class RedditAgent:
                 'description': lead.get('selftext', '')[:500],
                 'post_text': lead.get('full_text'),
                 'url': lead['url'],
-                'posted_at': None,
+                'posted_at': lead['created_datetime'],
             })
         
         return results
