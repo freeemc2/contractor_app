@@ -1,24 +1,313 @@
-<!DOCTYPE html><html><head><title>Lead Review</title>
-<style>body{font-family:Arial;background:#f5f5f5;margin:0}.lang-toggle{position:fixed;top:20px;right:20px;background:white;padding:10px 20px;border-radius:8px;cursor:pointer}.header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:30px;text-align:center}.stats{display:flex;gap:20px;padding:20px;max-width:1200px;margin:0 auto}.stat-box{flex:1;background:white;padding:25px;border-radius:12px;text-align:center}.stat-box h3{font-size:36px;color:#667eea}.lead-card{background:white;margin:20px auto;max-width:1200px;padding:20px;border-radius:12px}.lead-actions{display:flex;gap:10px;margin-top:15px}.btn{padding:12px 24px;border:none;border-radius:8px;cursor:pointer;color:white}.btn-approve{background:#4CAF50}.btn-reject{background:#f44336}.btn-maybe{background:#ff9800}.btn-view{background:#2196F3}</style></head><body>
-<div class="lang-toggle" onclick="toggleLanguage()"><span id="lang-icon">🇺🇸 EN</span></div>
-<div class="header"><h1>Lead Review</h1></div>
-<div class="stats">
-<div class="stat-box"><h3>{{stats.pending}}</h3><p>Pending</p></div>
-<div class="stat-box"><h3>{{stats.approved}}</h3><p>Approved</p></div>
-<div class="stat-box"><h3>{{stats.rejected}}</h3><p>Rejected</p></div>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lead #{{ lead.id }} &mdash; {{ (lead.title or 'Untitled')[:50] }}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 20px; }
+
+        .topbar { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+        .back-btn { color: #667eea; text-decoration: none; font-size: 14px; font-weight: 600; }
+        .back-btn:hover { text-decoration: underline; }
+        .lead-id { color: #999; font-size: 14px; }
+
+        .card { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
+        .card h2 { font-size: 16px; font-weight: 700; color: #4a5568; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+
+        .lead-title { font-size: 22px; font-weight: 700; color: #2d3748; margin-bottom: 12px; line-height: 1.3; }
+        .lead-meta { display: flex; flex-wrap: wrap; gap: 10px; }
+
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+        .badge.source   { background: #e9d8fd; color: #553c9a; }
+        .badge.urgency-asap { background: #fed7d7; color: #c53030; }
+        .badge.urgency-week { background: #feebc8; color: #c05621; }
+        .badge.urgency-flex { background: #c6f6d5; color: #22543d; }
+        .badge.pending      { background: #fed7d7; color: #c53030; }
+        .badge.responded    { background: #bee3f8; color: #2c5282; }
+        .badge.qualified    { background: #feebc8; color: #c05621; }
+        .badge.deposit-sent { background: #e6fffa; color: #234e52; }
+        .badge.deposit-paid { background: #c6f6d5; color: #22543d; }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+        .info-table { width: 100%; }
+        .info-table tr td:first-child { color: #718096; font-size: 13px; font-weight: 600; padding: 6px 0; width: 120px; }
+        .info-table tr td:last-child { font-size: 13px; color: #2d3748; padding: 6px 0; }
+
+        .post-text { font-size: 14px; line-height: 1.7; color: #4a5568; white-space: pre-wrap; max-height: 300px; overflow-y: auto; background: #f7fafc; padding: 16px; border-radius: 6px; }
+
+        .status-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+        .status-step { display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #e2e8f0; }
+        .status-dot.active { background: #667eea; }
+        .status-dot.done   { background: #48bb78; }
+        .status-label { font-size: 12px; color: #999; }
+        .status-label.active { font-weight: 700; color: #2d3748; }
+        .status-arrow { color: #e2e8f0; font-size: 14px; }
+
+        .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 700; }
+        .btn:hover { opacity: 0.85; }
+        .btn-blue   { background: #667eea; color: white; }
+        .btn-green  { background: #48bb78; color: white; }
+        .btn-orange { background: #ed8936; color: white; }
+        .btn-gray   { background: #718096; color: white; }
+        .btn-red    { background: #fc8181; color: white; }
+        .btn-outline { background: white; border: 1px solid #667eea; color: #667eea; }
+
+        .payment-box { background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 8px; padding: 16px; }
+        .payment-box.unpaid { background: #fffaf0; border-color: #fbd38d; }
+        .payment-link { font-family: monospace; font-size: 12px; word-break: break-all; color: #553c9a; margin-top: 8px; }
+
+        .assign-row { display: flex; align-items: center; gap: 10px; }
+        .assign-row select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; flex: 1; max-width: 300px; }
+
+        #toast {
+            position: fixed; bottom: 24px; right: 24px; background: #2d3748; color: white;
+            padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 999;
+            transform: translateY(80px); transition: transform 0.3s;
+        }
+        #toast.show { transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <a href="/dashboard" class="back-btn">&#8592; Back to Dashboard</a>
+    <span class="lead-id">Lead #{{ lead.id }}</span>
 </div>
-{% for lead in leads %}
-<div class="lead-card" id="lead-{{lead.id}}">
-<h3>{{lead.title}}</h3>
-<p>{{lead.description or lead.post_text[:300]}}</p>
-<div class="lead-actions">
-<button class="btn btn-view" onclick="window.open('{{lead.source_url}}','_blank')">View</button>
-<button class="btn btn-reject" onclick="reviewLead({{lead.id}},'rejected')">❌ Reject</button>
-<button class="btn btn-maybe" onclick="reviewLead({{lead.id}},'maybe')">⏸️ Maybe</button>
-<button class="btn btn-approve" onclick="reviewLead({{lead.id}},'approved')">✅ Approve</button>
-</div></div>
-{% endfor %}
+
+<!-- Title & Meta -->
+<div class="card">
+    <div class="lead-title">{{ lead.title or 'Untitled Lead' }}</div>
+    <div class="lead-meta">
+        {% if lead.source %}<span class="badge source">{{ lead.source }}</span>{% endif %}
+        {% if lead.urgency %}
+            <span class="badge urgency-{% if 'asap' in (lead.urgency or '')|lower %}asap{% elif 'week' in (lead.urgency or '')|lower %}week{% else %}flex{% endif %}">
+                {{ lead.urgency }}
+            </span>
+        {% endif %}
+        <span class="badge {{ (lead.response_status or 'pending')|replace('_', '-') }}">
+            {{ (lead.response_status or 'pending')|replace('_', ' ')|title }}
+        </span>
+        {% if lead.posted_at %}
+            <span style="font-size:12px;color:#999">Posted {{ lead.posted_at.strftime('%b %d, %Y') }}</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Content + Contact -->
+<div class="two-col">
+    <!-- Left: Description -->
+    <div class="card">
+        <h2>Lead Description</h2>
+        {% if lead.description or lead.post_text %}
+            <div class="post-text">{{ lead.post_text or lead.description }}</div>
+        {% else %}
+            <p style="color:#999;font-size:13px">No description available.</p>
+        {% endif %}
+        {% if lead.source_url %}
+            <div style="margin-top:14px">
+                <a href="{{ lead.source_url }}" target="_blank" class="btn btn-outline" style="text-decoration:none;display:inline-block">View Original Post &#8599;</a>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Right: Contact + Location -->
+    <div>
+        <div class="card">
+            <h2>Contact Info</h2>
+            <table class="info-table">
+                <tr><td>Name</td><td>{{ lead.customer_name or '&mdash;' }}</td></tr>
+                <tr><td>Phone</td><td>
+                    {% if lead.phone %}<a href="tel:{{ lead.phone }}" style="color:#667eea">{{ lead.phone }}</a>
+                    {% else %}&mdash;{% endif %}
+                </td></tr>
+                <tr><td>Email</td><td>
+                    {% if lead.email %}<a href="mailto:{{ lead.email }}" style="color:#667eea">{{ lead.email }}</a>
+                    {% else %}&mdash;{% endif %}
+                </td></tr>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Location</h2>
+            <table class="info-table">
+                <tr><td>Location</td><td>{{ lead.location or '&mdash;' }}</td></tr>
+                <tr><td>City</td><td>{{ lead.city or '&mdash;' }}</td></tr>
+                <tr><td>State</td><td>{{ lead.state or '&mdash;' }}</td></tr>
+                <tr><td>Zip</td><td>{{ lead.zip_code or '&mdash;' }}</td></tr>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Lead Details</h2>
+            <table class="info-table">
+                <tr><td>Trade</td><td>{{ lead.detected_trade or lead.keyword or '&mdash;' }}</td></tr>
+                <tr><td>Quality</td><td>
+                    {% if lead.quality_score %}{{ "%.0f"|format(lead.quality_score * 100) }}%
+                    {% else %}&mdash;{% endif %}
+                </td></tr>
+                <tr><td>Source</td><td>{{ lead.source or '&mdash;' }}</td></tr>
+                <tr><td>Scraped</td><td>{{ lead.scraped_at.strftime('%b %d, %Y %I:%M%p') if lead.scraped_at else '&mdash;' }}</td></tr>
+                <tr><td>Assigned</td><td>{{ lead.assigned_to or 'Unassigned' }}</td></tr>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Status Update -->
+<div class="card">
+    <h2>Update Status</h2>
+
+    <!-- Status flow indicator -->
+    <div class="status-flow" style="margin-bottom:20px">
+        {% set statuses = [('pending','Pending'), ('responded','Responded'), ('qualified','Qualified'), ('deposit_sent','Deposit Sent'), ('deposit_paid','Paid')] %}
+        {% set current = lead.response_status or 'pending' %}
+        {% set order = ['pending','responded','qualified','deposit_sent','deposit_paid'] %}
+        {% set current_idx = order.index(current) if current in order else 0 %}
+        {% for val, label in statuses %}
+            {% set idx = loop.index0 %}
+            <div class="status-step">
+                <div class="status-dot {% if idx < current_idx %}done{% elif idx == current_idx %}active{% endif %}"></div>
+                <span class="status-label {% if idx == current_idx %}active{% endif %}">{{ label }}</span>
+            </div>
+            {% if not loop.last %}<span class="status-arrow">&#8594;</span>{% endif %}
+        {% endfor %}
+    </div>
+
+    <div class="btn-row">
+        {% set rs = lead.response_status or 'pending' %}
+        {% if rs in ['pending'] %}
+            <button class="btn btn-blue" onclick="updateStatus('responded')">Mark Responded</button>
+        {% endif %}
+        {% if rs in ['pending', 'responded'] %}
+            <button class="btn btn-green" onclick="updateStatus('qualified')">Mark Qualified</button>
+        {% endif %}
+        {% if rs in ['pending', 'responded', 'qualified', 'deposit_sent'] %}
+            <button class="btn btn-gray" onclick="updateStatus('pending')">Reset to Pending</button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Payment -->
+<div class="card">
+    <h2>Payment / Deposit</h2>
+    {% if lead.response_status == 'deposit_paid' %}
+        <div class="payment-box">
+            <strong style="color:#276749">&#10003; Deposit Paid</strong>
+            <table class="info-table" style="margin-top:10px">
+                <tr><td>Amount</td><td>${{ "%.2f"|format(lead.deposit_amount or 0) }}</td></tr>
+                <tr><td>Paid At</td><td>{{ lead.deposit_paid_at.strftime('%b %d, %Y %I:%M%p') if lead.deposit_paid_at else '&mdash;' }}</td></tr>
+                <tr><td>Session</td><td style="font-family:monospace;font-size:11px">{{ lead.stripe_session_id or '&mdash;' }}</td></tr>
+            </table>
+        </div>
+    {% elif lead.deposit_payment_link %}
+        <div class="payment-box unpaid">
+            <strong>Payment Link Active</strong> &mdash; ${{ "%.2f"|format(lead.deposit_amount or 0) }}
+            <div class="payment-link">{{ lead.deposit_payment_link }}</div>
+            <div class="btn-row" style="margin-top:12px">
+                <button class="btn btn-orange" onclick="navigator.clipboard?.writeText('{{ lead.deposit_payment_link }}');toast('Link copied!')">Copy Link</button>
+                <a href="{{ lead.deposit_payment_link }}" target="_blank" class="btn btn-blue" style="text-decoration:none">Open Link &#8599;</a>
+            </div>
+        </div>
+    {% elif lead.response_status == 'qualified' %}
+        <p style="font-size:13px;color:#718096;margin-bottom:14px">Lead is qualified. Generate a Stripe payment link to collect the deposit.</p>
+        <button class="btn btn-green" onclick="sendPayment()">Generate Payment Link ($50)</button>
+    {% else %}
+        <p style="font-size:13px;color:#999">Qualify the lead first to send a payment link.</p>
+    {% endif %}
+</div>
+
+{% if user.is_admin %}
+<!-- Lead Assignment (admin only) -->
+<div class="card">
+    <h2>Assign to Contractor</h2>
+    <div class="assign-row">
+        <select id="assignSelect">
+            <option value="">-- Unassigned --</option>
+        </select>
+        <button class="btn btn-blue" onclick="assignLead()">Assign</button>
+    </div>
+    <p style="font-size:12px;color:#999;margin-top:8px">
+        Currently: {% if lead.assigned_to %}User #{{ lead.assigned_to }}{% else %}Unassigned{% endif %}
+    </p>
+</div>
+{% endif %}
+
+<div id="toast"></div>
+
 <script>
-function toggleLanguage(){alert('ES/EN')}
-function reviewLead(id,status){fetch('/api/review_lead/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}).then(()=>location.reload())}
-</script></body></html>
+    const LEAD_ID = {{ lead.id }};
+    const IS_ADMIN = {{ 'true' if user.is_admin else 'false' }};
+
+    function toast(msg, duration = 3000) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), duration);
+    }
+
+    function updateStatus(status) {
+        fetch(`/api/update_status/${LEAD_ID}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { toast(`Status updated to ${status}`); setTimeout(() => location.reload(), 800); }
+            else toast(data.error || 'Error updating status');
+        });
+    }
+
+    function sendPayment() {
+        if (!confirm('Generate Stripe payment link for $50 deposit?')) return;
+        fetch(`/api/send_payment/${LEAD_ID}`, {method: 'POST'})
+            .then(r => r.json())
+            .then(data => {
+                if (data.url) {
+                    toast('Payment link created!');
+                    navigator.clipboard?.writeText(data.url);
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    toast(data.error || 'Payment error');
+                }
+            });
+    }
+
+    {% if user.is_admin %}
+    // Load users for assignment dropdown
+    fetch('/api/users')
+        .then(r => r.json())
+        .then(users => {
+            const sel = document.getElementById('assignSelect');
+            users.forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = `${u.company_name || u.email} (${u.trade || 'any'})`;
+                if (u.id === {{ lead.assigned_to or 'null' }}) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        });
+
+    function assignLead() {
+        const userId = document.getElementById('assignSelect').value;
+        fetch(`/api/assign_lead/${LEAD_ID}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({user_id: userId ? parseInt(userId) : null})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { toast(userId ? 'Lead assigned & email sent' : 'Lead unassigned'); setTimeout(() => location.reload(), 800); }
+            else toast(data.error || 'Error');
+        });
+    }
+    {% endif %}
+</script>
+</body>
+</html>

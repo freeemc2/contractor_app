@@ -6,142 +6,128 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f5f5f5;
-            padding: 20px;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 20px; }
+
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            color: white; padding: 24px 30px; border-radius: 10px;
+            margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;
         }
-        .header h1 { font-size: 32px; margin-bottom: 10px; }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .stat-card h3 { color: #666; font-size: 14px; margin-bottom: 10px; }
-        .stat-card .number { font-size: 36px; font-weight: bold; color: #667eea; }
+        .header h1 { font-size: 26px; }
+        .header .user-info { font-size: 14px; opacity: 0.9; }
+        .header a { color: white; text-decoration: none; background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 6px; font-size: 13px; }
+        .header a:hover { background: rgba(255,255,255,0.35); }
+
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; padding: 18px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .stat-card h3 { color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .stat-card .number { font-size: 32px; font-weight: bold; color: #667eea; }
         .stat-card.paid .number { color: #48bb78; }
         .stat-card.revenue .number { color: #ed8936; }
-        
+
         .filters {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background: white; border-radius: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; overflow: hidden;
         }
-        .filters select, .filters button {
-            padding: 10px 20px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            margin-right: 10px;
-            font-size: 14px;
+        .filter-row {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+            padding: 14px 20px; border-bottom: 1px solid #f0f0f0;
         }
-        .filters button {
-            background: #667eea;
-            color: white;
-            border: none;
-            cursor: pointer;
+        .filter-row:last-child { border-bottom: none; }
+        .filter-row label { font-size: 12px; font-weight: 600; color: #666; white-space: nowrap; }
+        .filter-row input, .filter-row select {
+            padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; flex: 1; min-width: 120px;
         }
-        .filters button:hover { background: #5568d3; }
-        
-        .leads-table {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th {
-            background: #f7fafc;
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-            color: #4a5568;
-            border-bottom: 2px solid #e2e8f0;
-        }
-        td {
-            padding: 15px;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        tr:hover { background: #f7fafc; }
-        
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        .badge.pending { background: #fed7d7; color: #c53030; }
-        .badge.responded { background: #bee3f8; color: #2c5282; }
-        .badge.qualified { background: #feebc8; color: #c05621; }
+        .filter-row input:focus, .filter-row select:focus { outline: none; border-color: #667eea; }
+        .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5568d3; }
+        .btn-success { background: #48bb78; color: white; }
+        .btn-success:hover { background: #38a169; }
+        .btn-secondary { background: #718096; color: white; }
+        .btn-secondary:hover { background: #4a5568; }
+        .btn-orange { background: #ed8936; color: white; }
+        .btn-orange:hover { background: #dd6b20; }
+
+        .leads-table { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f7fafc; padding: 12px 15px; text-align: left; font-weight: 600; font-size: 12px; color: #4a5568; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 12px 15px; border-bottom: 1px solid #f0f0f0; font-size: 13px; vertical-align: middle; }
+        tr:hover td { background: #fafafa; }
+        tr:last-child td { border-bottom: none; }
+
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .badge.pending    { background: #fed7d7; color: #c53030; }
+        .badge.responded  { background: #bee3f8; color: #2c5282; }
+        .badge.qualified  { background: #feebc8; color: #c05621; }
         .badge.deposit-sent { background: #e6fffa; color: #234e52; }
         .badge.deposit-paid { background: #c6f6d5; color: #22543d; }
-        
-        .action-btn {
-            padding: 6px 12px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            margin-right: 5px;
+
+        .action-btn { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin-right: 4px; }
+        .action-btn.primary  { background: #667eea; color: white; }
+        .action-btn.success  { background: #48bb78; color: white; }
+        .action-btn.secondary{ background: #718096; color: white; }
+        .action-btn.orange   { background: #ed8936; color: white; }
+        .action-btn:hover    { opacity: 0.85; }
+
+        .quality-bar { height: 6px; background: #e2e8f0; border-radius: 3px; width: 60px; display: inline-block; vertical-align: middle; }
+        .quality-fill { height: 100%; border-radius: 3px; background: #48bb78; }
+
+        #toast {
+            position: fixed; bottom: 24px; right: 24px; background: #2d3748; color: white;
+            padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 999;
+            transform: translateY(80px); transition: transform 0.3s; pointer-events: none;
         }
-        .action-btn:hover { background: #5568d3; }
-        .action-btn.secondary { background: #718096; }
-        .action-btn.success { background: #48bb78; }
+        #toast.show { transform: translateY(0); }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: #999; }
+        .empty-state p { font-size: 16px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>🚀 Contractor Lead Dashboard</h1>
-        <p>Real-time lead tracking & payment monitoring</p>
-    </div>
 
-    <div class="stats">
-        <div class="stat-card">
-            <h3>Total Leads</h3>
-            <div class="number">{{ stats.total }}</div>
-        </div>
-        <div class="stat-card">
-            <h3>Pending</h3>
-            <div class="number">{{ stats.pending }}</div>
-        </div>
-        <div class="stat-card">
-            <h3>Responded</h3>
-            <div class="number">{{ stats.responded }}</div>
-        </div>
-        <div class="stat-card paid">
-            <h3>Paid Deposits</h3>
-            <div class="number">{{ stats.paid }}</div>
-        </div>
-        <div class="stat-card revenue">
-            <h3>Revenue (Est.)</h3>
-            <div class="number">${{ stats.revenue }}</div>
-        </div>
+<div class="header">
+    <div>
+        <h1>Contractor Lead Dashboard</h1>
+        <div class="user-info">{{ user.email }} {% if user.is_admin %}&mdash; Admin{% endif %}</div>
     </div>
+    <a href="/logout">Logout</a>
+</div>
 
-    <div class="filters">
-        <select id="statusFilter" onchange="filterLeads()">
+<div class="stats">
+    <div class="stat-card">
+        <h3>Total Leads</h3>
+        <div class="number">{{ stats.total }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Pending</h3>
+        <div class="number">{{ stats.pending }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Responded</h3>
+        <div class="number">{{ stats.responded }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Qualified</h3>
+        <div class="number">{{ stats.qualified }}</div>
+    </div>
+    <div class="stat-card paid">
+        <h3>Deposits Paid</h3>
+        <div class="number">{{ stats.paid }}</div>
+    </div>
+    <div class="stat-card revenue">
+        <h3>Revenue</h3>
+        <div class="number">${{ "%.0f"|format(stats.revenue) }}</div>
+    </div>
+</div>
+
+<div class="filters">
+    <!-- Row 1: Text search + Status + Trade -->
+    <div class="filter-row">
+        <label>Search</label>
+        <input type="text" id="searchBox" placeholder="Title, name, description..." style="flex:2">
+        <label>Status</label>
+        <select id="statusFilter">
             <option value="">All Statuses</option>
             <option value="pending">Pending</option>
             <option value="responded">Responded</option>
@@ -149,105 +135,251 @@
             <option value="deposit_sent">Deposit Sent</option>
             <option value="deposit_paid">Deposit Paid</option>
         </select>
-        
-        <select id="tradeFilter" onchange="filterLeads()">
+        <label>Trade</label>
+        <select id="tradeFilter">
             <option value="">All Trades</option>
             <option value="electrician">Electrician</option>
             <option value="plumber">Plumber</option>
-            <option value="contractor">General Contractor</option>
+            <option value="contractor">Contractor</option>
         </select>
-        
-        <button onclick="runAgent()">▶ Run AI Agent</button>
-        <button onclick="location.reload()" class="secondary">🔄 Refresh</button>
+        <button class="btn btn-primary" onclick="filterLeads()">Filter</button>
+        <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
     </div>
 
-    <div class="leads-table">
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Title</th>
-                    <th>Trade</th>
-                    <th>Location</th>
-                    <th>Status</th>
-                    <th>Deposit</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for lead in leads %}
-                <tr>
-                    <td>#{{ lead.id }}</td>
-                    <td>{{ lead.title[:60] }}</td>
-                    <td>{{ lead.detected_trade or 'Unknown' }}</td>
-                    <td>{{ lead.location or 'N/A' }}</td>
-                    <td>
-                        <span class="badge {{ (lead.response_status or 'pending')|replace('_', '-') }}">
-                            {{ (lead.response_status or 'pending')|replace('_', ' ')|title }}
-                        </span>
-                    </td>
-                    <td>
-                        {% if lead.deposit_amount %}
-                            <strong>${{ lead.deposit_amount }}</strong>
-                            {% if lead.deposit_paid_at %}
-                                <span style="color: green;">✓ Paid</span>
-                            {% endif %}
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if not lead.response_status or lead.response_status == 'pending' %}
-                            <button class="action-btn" onclick="markQualified({{ lead.id }})">Mark Qualified</button>
-                        {% elif lead.response_status == 'qualified' %}
-                            <button class="action-btn success" onclick="sendPayment({{ lead.id }})">Send Payment</button>
-                        {% elif lead.deposit_payment_link %}
-                            <button class="action-btn secondary" onclick="window.open('{{ lead.deposit_payment_link }}')">View Link</button>
-                        {% endif %}
-                        <button class="action-btn secondary" onclick="viewDetails({{ lead.id }})">Details</button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Row 2: Location / Zip / Radius -->
+    <div class="filter-row">
+        <label>Location</label>
+        <input type="text" id="locationBox" placeholder="City or zip code...">
+        <label>Radius</label>
+        <select id="radiusFilter">
+            <option value="">Any distance</option>
+            <option value="5">5 miles</option>
+            <option value="10">10 miles</option>
+            <option value="25">25 miles</option>
+            <option value="50">50 miles</option>
+        </select>
+        <button class="btn btn-primary" onclick="filterLeads()">Search Location</button>
     </div>
 
-    <script>
-        function markQualified(id) {
-            if (confirm(`Mark lead #${id} as qualified?`)) {
-                fetch(`/api/update_status/${id}`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({status: 'qualified'})
-                }).then(() => location.reload());
-            }
-        }
+    {% if user.is_admin %}
+    <!-- Row 3: Custom keyword scrape + agent controls -->
+    <div class="filter-row">
+        <label>Scrape Keyword</label>
+        <input type="text" id="scrapeKeyword" placeholder="e.g. roofer, HVAC, plumber...">
+        <input type="text" id="scrapeLocation" placeholder="Location (e.g. Sarasota FL)" style="max-width:200px">
+        <button class="btn btn-orange" onclick="scrapeKeyword()">Scrape Now</button>
+        <button class="btn btn-success" onclick="runAgent()">Run AI Agent</button>
+        <button class="btn btn-secondary" onclick="location.reload()">Refresh</button>
+    </div>
+    {% endif %}
+</div>
 
-        function sendPayment(id) {
-            if (confirm(`Generate payment link for lead #${id}?`)) {
-                fetch(`/api/send_payment/${id}`, {
-                    method: 'POST'
-                }).then(r => r.json()).then(data => {
-                    alert(`Payment link created!\n${data.url}`);
-                    location.reload();
-                });
-            }
-        }
+<div class="leads-table">
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Title</th>
+                <th>Trade</th>
+                <th>Location</th>
+                <th>Status</th>
+                <th>Quality</th>
+                <th>Deposit</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="leadsBody">
+            {% for lead in leads %}
+            <tr>
+                <td>#{{ lead.id }}</td>
+                <td title="{{ lead.title }}">{{ (lead.title or 'Untitled')[:55] }}{% if (lead.title or '')|length > 55 %}...{% endif %}</td>
+                <td>{{ lead.detected_trade or lead.keyword or 'Unknown' }}</td>
+                <td>{{ lead.location or lead.city or 'N/A' }}</td>
+                <td>
+                    <span class="badge {{ (lead.response_status or 'pending')|replace('_', '-') }}">
+                        {{ (lead.response_status or 'pending')|replace('_', ' ')|title }}
+                    </span>
+                </td>
+                <td>
+                    {% if lead.quality_score %}
+                    <div class="quality-bar" title="{{ '%.0f'|format(lead.quality_score * 100) }}%">
+                        <div class="quality-fill" style="width:{{ lead.quality_score * 100 }}%;{% if lead.quality_score < 0.4 %}background:#fc8181;{% elif lead.quality_score < 0.7 %}background:#f6ad55;{% endif %}"></div>
+                    </div>
+                    {% else %}&mdash;{% endif %}
+                </td>
+                <td>
+                    {% if lead.deposit_amount %}
+                        <strong>${{ "%.0f"|format(lead.deposit_amount) }}</strong>
+                        {% if lead.deposit_paid_at %}<span style="color:#48bb78"> &#10003;</span>{% endif %}
+                    {% else %}&mdash;{% endif %}
+                </td>
+                <td>
+                    {% set rs = lead.response_status or 'pending' %}
+                    {% if rs == 'pending' %}
+                        <button class="action-btn primary" onclick="updateStatus({{ lead.id }}, 'responded')">Responded</button>
+                        <button class="action-btn success" onclick="updateStatus({{ lead.id }}, 'qualified')">Qualify</button>
+                    {% elif rs == 'responded' %}
+                        <button class="action-btn success" onclick="updateStatus({{ lead.id }}, 'qualified')">Qualify</button>
+                    {% elif rs == 'qualified' %}
+                        <button class="action-btn orange" onclick="sendPayment({{ lead.id }})">Send Payment</button>
+                    {% elif rs == 'deposit_sent' and lead.deposit_payment_link %}
+                        <button class="action-btn secondary" onclick="window.open('{{ lead.deposit_payment_link }}')">View Link</button>
+                    {% endif %}
+                    <button class="action-btn secondary" onclick="viewDetails({{ lead.id }})">Details</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="empty-state"><p>No leads yet &mdash; run the AI agent to scrape new leads.</p></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
-        function runAgent() {
-            if (confirm('Run AI Response Agent?')) {
-                fetch('/api/run_agent', {method: 'POST'})
-                    .then(r => r.json())
-                    .then(data => {
-                        alert(data.message);
-                        location.reload();
-                    });
-            }
-        }
+<div id="toast"></div>
 
-        function viewDetails(id) {
-            window.location.href = `/lead/${id}`;
+<script>
+    const IS_ADMIN = {{ 'true' if user.is_admin else 'false' }};
+
+    function toast(msg, duration = 3000) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), duration);
+    }
+
+    function resetFilters() {
+        ['searchBox', 'locationBox', 'scrapeKeyword', 'scrapeLocation'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        ['statusFilter', 'tradeFilter', 'radiusFilter'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        filterLeads();
+    }
+
+    function filterLeads() {
+        const params = new URLSearchParams();
+        const search   = document.getElementById('searchBox').value;
+        const status   = document.getElementById('statusFilter').value;
+        const trade    = document.getElementById('tradeFilter').value;
+        const location = document.getElementById('locationBox').value;
+        const radius   = document.getElementById('radiusFilter').value;
+
+        if (search)   params.append('search', search);
+        if (status)   params.append('status', status);
+        if (trade)    params.append('trade', trade);
+        if (location) params.append('location', location);
+        if (radius)   params.append('radius', radius);
+
+        fetch(`/api/filter-leads?${params}`)
+            .then(r => r.json())
+            .then(leads => renderLeads(leads))
+            .catch(() => toast('Filter error'));
+    }
+
+    function renderLeads(leads) {
+        const tbody = document.getElementById('leadsBody');
+        if (!leads.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><p>No leads match your filters.</p></td></tr>';
+            return;
         }
-    </script>
+        tbody.innerHTML = leads.map(l => {
+            const rs = l.response_status || 'pending';
+            const badgeClass = rs.replace(/_/g, '-');
+            const badgeText = rs.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const quality = l.quality_score ? `<div class="quality-bar"><div class="quality-fill" style="width:${l.quality_score*100}%"></div></div>` : '&mdash;';
+            const deposit = l.deposit ? `<strong>$${l.deposit.toFixed(0)}</strong>` : '&mdash;';
+            const title = (l.title || 'Untitled').substring(0, 55);
+            const loc = l.location || l.city || 'N/A';
+
+            let actions = '';
+            if (rs === 'pending') {
+                actions += `<button class="action-btn primary" onclick="updateStatus(${l.id},'responded')">Responded</button>`;
+                actions += `<button class="action-btn success" onclick="updateStatus(${l.id},'qualified')">Qualify</button>`;
+            } else if (rs === 'responded') {
+                actions += `<button class="action-btn success" onclick="updateStatus(${l.id},'qualified')">Qualify</button>`;
+            } else if (rs === 'qualified') {
+                actions += `<button class="action-btn orange" onclick="sendPayment(${l.id})">Send Payment</button>`;
+            } else if (rs === 'deposit_sent' && l.deposit_payment_link) {
+                actions += `<button class="action-btn secondary" onclick="window.open('${l.deposit_payment_link}')">View Link</button>`;
+            }
+            actions += `<button class="action-btn secondary" onclick="viewDetails(${l.id})">Details</button>`;
+
+            return `<tr>
+                <td>#${l.id}</td>
+                <td title="${(l.title||'').replace(/"/g,'&quot;')}">${title}</td>
+                <td>${l.trade || 'Unknown'}</td>
+                <td>${loc}</td>
+                <td><span class="badge ${badgeClass}">${badgeText}</span></td>
+                <td>${quality}</td>
+                <td>${deposit}</td>
+                <td>${actions}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function updateStatus(id, status) {
+        fetch(`/api/update_status/${id}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { toast(`Status updated to ${status}`); filterLeads(); }
+            else toast(data.error || 'Error');
+        });
+    }
+
+    function sendPayment(id) {
+        if (!confirm(`Generate Stripe payment link for lead #${id}?`)) return;
+        fetch(`/api/send_payment/${id}`, {method: 'POST'})
+            .then(r => r.json())
+            .then(data => {
+                if (data.url) {
+                    toast('Payment link created!');
+                    navigator.clipboard?.writeText(data.url);
+                    filterLeads();
+                } else {
+                    toast(data.error || 'Payment error');
+                }
+            });
+    }
+
+    function viewDetails(id) {
+        window.location.href = `/lead/${id}`;
+    }
+
+    function runAgent() {
+        if (!confirm('Run AI Agent? This will scrape Reddit for new leads.')) return;
+        fetch('/api/run_agent', {method: 'POST'})
+            .then(r => r.json())
+            .then(data => { toast(data.message || 'Agent started'); });
+    }
+
+    function scrapeKeyword() {
+        const keyword  = document.getElementById('scrapeKeyword').value.trim();
+        const location = document.getElementById('scrapeLocation').value.trim();
+        if (!keyword) { toast('Enter a keyword to scrape'); return; }
+        fetch('/api/search_keyword', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keyword, location})
+        })
+        .then(r => r.json())
+        .then(data => {
+            toast(data.message || data.error || 'Scrape started');
+            document.getElementById('scrapeKeyword').value = '';
+        });
+    }
+
+    // Search on Enter
+    ['searchBox', 'locationBox'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('keyup', e => { if (e.key === 'Enter') filterLeads(); });
+    });
+</script>
 </body>
 </html>

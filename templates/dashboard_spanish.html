@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard - Lead Management</title>
+    <style>
+        .lang-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .lang-toggle:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <button class="lang-toggle" onclick="toggleLanguage()">🌐 Español</button>
+    
+    <h1 id="title">Contractor Lead Dashboard</h1>
+    
+    <script>
+        let isSpanish = false;
+        
+        const translations = {
+            en: {
+                title: "Contractor Lead Dashboard",
+                button: "🌐 Español"
+            },
+            es: {
+                title: "Panel de Control de Contactos",
+                button: "🌐 English"
+            }
+        };
+        
+        function toggleLanguage() {
+            isSpanish = !isSpanish;
+            const lang = isSpanish ? 'es' : 'en';
+            document.getElementById('title').textContent = translations[lang].title;
+            document.querySelector('.lang-toggle').textContent = translations[lang].button;
+        }
+    </script>
+</body>
+</html>

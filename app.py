@@ -5,9 +5,14 @@ Multi-agent architecture with AI collation
 """
 import os
 import json
+import math
 import time
 import logging
+import smtplib
+import threading
 from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from functools import wraps
 
 from dotenv import load_dotenv
@@ -28,7 +33,7 @@ def parse_datetime(dt_str):
         return None
 
 from flask import (
-    Flask, render_template, request, jsonify,
+    Flask, render_template, render_template_string, request, jsonify,
     session, redirect, url_for, flash
 )
 from flask_sqlalchemy import SQLAlchemy
@@ -43,14 +48,20 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-in-production")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "DATABASE_URL", 
-    "postgresql://postgres:postgres@localhost/contractor_leads"
+    "sqlite:///./contractor_leads.db"  # Use SQLite for local dev, PostgreSQL in production
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_size": 20,
-    "pool_recycle": 3600,
-    "pool_pre_ping": True,
-}
+_db_url = app.config["SQLALCHEMY_DATABASE_URI"]
+if "sqlite" in _db_url:
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "connect_args": {"check_same_thread": False}
+    }
+else:
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_size": 20,
+        "pool_recycle": 3600,
+        "pool_pre_ping": True,
+    }
 
 CORS(app)
 
@@ -60,6 +71,92 @@ STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
 db = SQLAlchemy(app)
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def haversine_miles(lat1, lon1, lat2, lon2):
+    R = 3958.8
+    lat1, lon1, lat2, lon2 = map(math.radians, [float(lat1), float(lon1), float(lat2), float(lon2)])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def geocode_location(query):
+    import requests as _req
+    try:
+        r = _req.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": query, "format": "json", "limit": 1},
+            headers={"User-Agent": "ContractorLeadApp/1.0"},
+            timeout=5,
+        )
+        data = r.json()
+        if data:
+            return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    return None, None
+
+
+def send_email(subject, body_html, to_email=None):
+    host = os.environ.get("SMTP_HOST")
+    user = os.environ.get("SMTP_USER")
+    passwd = os.environ.get("SMTP_PASS")
+    to = to_email or os.environ.get("NOTIFY_EMAIL")
+    if not all([host, user, passwd, to]):
+        return
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = user
+        msg["To"] = to
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body_html, "html"))
+        with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", 587))) as s:
+            s.starttls()
+            s.login(user, passwd)
+            s.send_message(msg)
+        log.info(f"Email sent to {to}: {subject}")
+    except Exception as e:
+        log.error(f"Email failed: {e}")
+
+
+def scrape_reddit_background(keyword, location, app_ctx):
+    with app_ctx.app_context():
+        try:
+            from reddit_agent import RedditScraper
+            scraper = RedditScraper()
+            results = scraper.find_contractor_leads(location, keyword)
+            added = 0
+            for r in results:
+                if Lead.query.filter_by(source_url=r["url"]).first():
+                    continue
+                lead = Lead(
+                    source="reddit",
+                    source_url=r["url"],
+                    keyword=keyword,
+                    title=r["title"],
+                    description=(r.get("selftext") or "")[:500],
+                    post_text=r.get("full_text", ""),
+                    location=location,
+                    customer_name=r.get("author"),
+                    posted_at=datetime.fromisoformat(r["created_datetime"])
+                    if r.get("created_datetime") else None,
+                )
+                db.session.add(lead)
+                added += 1
+            db.session.commit()
+            log.info(f"Scrape done: {added} new leads for '{keyword}' in {location}")
+            if added > 0:
+                send_email(
+                    f"[Leads] {added} new {keyword} leads in {location}",
+                    f"<p>{added} new <b>{keyword}</b> leads scraped in <b>{location}</b>.</p>"
+                    f"<p><a href='http://localhost:5003/dashboard'>View Dashboard</a></p>",
+                )
+        except Exception as e:
+            log.error(f"Background scrape failed: {e}")
 
 # ---------------------------------------------------------------------------
 # Models
@@ -123,7 +220,14 @@ class Lead(db.Model):
     active = db.Column(db.Boolean, default=True, index=True)
     assigned_to = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     status = db.Column(db.String(50), default="new", index=True)  # new, assigned, contacted, closed
+    response_status = db.Column(db.String(50), default="pending", index=True)  # pending, responded, qualified, deposit_sent, deposit_paid
     review_status = db.Column(db.String(20), default="pending", index=True)  # pending, approved, rejected
+    
+    # Payment/Deposit tracking
+    deposit_amount = db.Column(db.Float)
+    deposit_paid_at = db.Column(db.DateTime)
+    deposit_payment_link = db.Column(db.String(1000))
+    stripe_session_id = db.Column(db.String(255))
     
     # Timestamps
     posted_at = db.Column(db.DateTime)  # When customer posted
@@ -142,7 +246,6 @@ class ScrapeJob(db.Model):
     
     keyword = db.Column(db.String(200), index=True)
     location = db.Column(db.String(255))
-    review_status = db.Column(db.String(20), default="pending", index=True)  # pending, approved, rejected, maybe
     source = db.Column(db.String(100))  # reddit, craigslist, facebook, duckduckgo
     
     status = db.Column(db.String(50), default="pending", index=True)  # pending, processing, completed, failed
@@ -268,8 +371,7 @@ def logout():
 def dashboard():
     user = User.query.get(session["user_id"])
     
-    # Get user's leads
-    # Show all leads for admin
+    # Get user's leads - admin sees all, others see their trade
     if user.email == "admin@contractor.app":
         leads = Lead.query.filter(Lead.active == True).order_by(Lead.scraped_at.desc()).all()
     else:
@@ -278,11 +380,14 @@ def dashboard():
             Lead.keyword == user.trade,
         ).order_by(Lead.scraped_at.desc()).limit(50).all()
     
+    # Calculate stats based on response_status
     stats = {
-        "new_leads": Lead.query.filter_by(status="new").count(),
-        "assigned_leads": Lead.query.filter_by(assigned_to=user.id).count(),
-        "trial_days_left": max(0, (user.trial_start + timedelta(days=3) - datetime.utcnow()).days),
-        "subscription_active": user.subscription_status == "active",
+        "total": len(leads),
+        "pending": sum(1 for l in leads if (l.response_status or "pending") == "pending"),
+        "responded": sum(1 for l in leads if l.response_status == "responded"),
+        "qualified": sum(1 for l in leads if l.response_status == "qualified"),
+        "paid": sum(1 for l in leads if l.response_status == "deposit_paid"),
+        "revenue": sum(l.deposit_amount or 0 for l in leads if l.deposit_paid_at),
     }
     
     return render_template("dashboard.html", user=user, leads=leads, stats=stats)
@@ -347,6 +452,187 @@ def claim_lead(lead_id):
     log.info(f"Lead {lead_id} claimed by user {user.id}")
     
     return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# Lead Management API - Dashboard Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/lead/<int:lead_id>")
+@login_required
+def view_lead(lead_id):
+    """View detailed lead information"""
+    user = User.query.get(session["user_id"])
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Check authorization (admin or assigned user)
+    if user.email != "admin@contractor.app" and lead.assigned_to != user.id:
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    return render_template("lead_review.html", lead=lead, user=user)
+
+
+@app.route("/api/update_status/<int:lead_id>", methods=["POST"])
+@login_required
+def update_lead_status(lead_id):
+    """Update lead response status (pending, responded, qualified, deposit_sent, deposit_paid)"""
+    user = User.query.get(session["user_id"])
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Check authorization
+    if user.email != "admin@contractor.app" and lead.assigned_to != user.id:
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    data = request.json
+    new_status = data.get("status", "pending")
+    
+    if new_status not in ["pending", "responded", "qualified", "deposit_sent", "deposit_paid"]:
+        return jsonify({"error": "Invalid status"}), 400
+    
+    lead.response_status = new_status
+    db.session.commit()
+    
+    log.info(f"Lead {lead_id} status updated to {new_status} by user {user.id}")
+    
+    return jsonify({"success": True, "status": new_status})
+
+
+@app.route("/api/send_payment/<int:lead_id>", methods=["POST"])
+@login_required
+def send_payment_link(lead_id):
+    """Generate and send payment link via Stripe"""
+    user = User.query.get(session["user_id"])
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Check authorization
+    if user.email != "admin@contractor.app" and lead.assigned_to != user.id:
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    if not stripe.api_key:
+        return jsonify({"error": "Payment processing not configured"}), 500
+    
+    try:
+        # Create Stripe checkout session for deposit payment
+        session_obj = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {"name": f"Deposit for Lead #{lead_id}"},
+                        "unit_amount": 5000,  # $50.00 default deposit
+                    },
+                    "quantity": 1,
+                }
+            ],
+            mode="payment",
+            success_url=f"http://localhost:5003/payment/success?session_id={{CHECKOUT_SESSION_ID}}&lead_id={lead_id}",
+            cancel_url=f"http://localhost:5003/payment/cancel",
+        )
+        
+        lead.deposit_amount = 50.00
+        lead.deposit_payment_link = session_obj.url
+        lead.response_status = "deposit_sent"
+        lead.stripe_session_id = session_obj.id
+        db.session.commit()
+        
+        log.info(f"Payment link created for lead {lead_id}")
+        
+        return jsonify({"success": True, "url": session_obj.url})
+    except Exception as e:
+        log.error(f"Error creating payment link: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/run_agent", methods=["POST"])
+@admin_required
+def run_agent():
+    """Trigger reddit scraper for all configured keywords and locations"""
+    try:
+        keywords = os.environ.get("SCRAPE_KEYWORDS", "electrician,plumber,contractor").split(",")
+        locations = os.environ.get("SCRAPE_LOCATIONS", "Sarasota FL,North Port FL").split(",")
+        count = 0
+        for kw in keywords:
+            for loc in locations:
+                t = threading.Thread(
+                    target=scrape_reddit_background,
+                    args=(kw.strip(), loc.strip(), app),
+                    daemon=True,
+                )
+                t.start()
+                count += 1
+        log.info(f"AI agent triggered: {count} scrape threads started")
+        return jsonify({"success": True, "message": f"Started {count} scrape jobs. Results will appear shortly."})
+    except Exception as e:
+        log.error(f"Error running agent: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/filter-leads", methods=["GET"])
+@login_required
+def filter_leads():
+    """Filter leads by status, trade, location, radius, and keyword search"""
+    user = User.query.get(session["user_id"])
+
+    status = request.args.get("status", "")
+    trade = request.args.get("trade", "")
+    search = request.args.get("search", "")
+    location_q = request.args.get("location", "").strip()
+    radius = request.args.get("radius", "")
+
+    query = Lead.query.filter(Lead.active == True)
+
+    if user.email != "admin@contractor.app":
+        query = query.filter(Lead.keyword == user.trade)
+    elif trade:
+        query = query.filter(Lead.keyword == trade)
+
+    if status:
+        query = query.filter(Lead.response_status == status)
+
+    if search:
+        query = query.filter(
+            db.or_(
+                Lead.title.ilike(f"%{search}%"),
+                Lead.description.ilike(f"%{search}%"),
+                Lead.customer_name.ilike(f"%{search}%"),
+            )
+        )
+
+    leads = query.order_by(Lead.scraped_at.desc()).all()
+
+    # Location + radius filtering (Python-side for SQLite compatibility)
+    if location_q:
+        radius_miles = float(radius) if radius else 0
+        if radius_miles:
+            center_lat, center_lon = geocode_location(location_q)
+        else:
+            center_lat = center_lon = None
+
+        filtered = []
+        for lead in leads:
+            if radius_miles and center_lat and lead.lat and lead.lon:
+                if haversine_miles(center_lat, center_lon, lead.lat, lead.lon) <= radius_miles:
+                    filtered.append(lead)
+            else:
+                loc_str = " ".join(filter(None, [lead.city, lead.zip_code, lead.location, lead.state])).lower()
+                if location_q.lower() in loc_str:
+                    filtered.append(lead)
+        leads = filtered
+
+    return jsonify([{
+        "id": lead.id,
+        "title": lead.title or "Untitled",
+        "location": lead.location or "",
+        "city": lead.city or "",
+        "zip_code": lead.zip_code or "",
+        "response_status": lead.response_status or "pending",
+        "deposit": lead.deposit_amount or 0,
+        "deposit_payment_link": lead.deposit_payment_link or "",
+        "quality_score": lead.quality_score,
+        "urgency": lead.urgency or "",
+        "assigned_to": lead.assigned_to,
+    } for lead in leads])
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +769,138 @@ def create_scrape_jobs():
 
 
 # ---------------------------------------------------------------------------
+# Custom Keyword Scrape
+# ---------------------------------------------------------------------------
+
+@app.route("/api/search_keyword", methods=["POST"])
+@admin_required
+def search_keyword():
+    """Trigger a custom keyword scrape immediately"""
+    data = request.json
+    keyword = (data.get("keyword") or "").strip()
+    location = (data.get("location") or os.environ.get("SCRAPE_LOCATIONS", "Sarasota FL").split(",")[0]).strip()
+    if not keyword:
+        return jsonify({"error": "Keyword required"}), 400
+
+    job = ScrapeJob(keyword=keyword, location=location, source="reddit")
+    db.session.add(job)
+    db.session.commit()
+
+    t = threading.Thread(target=scrape_reddit_background, args=(keyword, location, app), daemon=True)
+    t.start()
+
+    return jsonify({"success": True, "message": f"Scraping '{keyword}' in '{location}'..."})
+
+
+# ---------------------------------------------------------------------------
+# Review & Assignment
+# ---------------------------------------------------------------------------
+
+@app.route("/api/review_lead/<int:lead_id>", methods=["POST"])
+@login_required
+def review_lead(lead_id):
+    """Update lead review status: approved, rejected, maybe, pending"""
+    lead = Lead.query.get_or_404(lead_id)
+    data = request.json
+    status = data.get("status")
+    if status not in ["approved", "rejected", "maybe", "pending"]:
+        return jsonify({"error": "Invalid status"}), 400
+    lead.review_status = status
+    db.session.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/api/assign_lead/<int:lead_id>", methods=["POST"])
+@admin_required
+def assign_lead(lead_id):
+    """Assign or unassign a lead to a contractor user"""
+    lead = Lead.query.get_or_404(lead_id)
+    data = request.json
+    user_id = data.get("user_id")
+
+    if user_id:
+        contractor = User.query.get(user_id)
+        if not contractor:
+            return jsonify({"error": "User not found"}), 404
+        lead.assigned_to = user_id
+        lead.assigned_at = datetime.utcnow()
+        lead.status = "assigned"
+        send_email(
+            f"New Lead Assigned: {(lead.title or '')[:60]}",
+            f"<p>Lead <b>#{lead.id}</b> has been assigned to you.</p>"
+            f"<p><b>{lead.title}</b></p>"
+            f"<p>Location: {lead.location}</p>"
+            f"<p><a href='http://localhost:5003/lead/{lead.id}'>View Lead &rarr;</a></p>",
+            to_email=contractor.email,
+        )
+    else:
+        lead.assigned_to = None
+        lead.status = "new"
+
+    db.session.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/api/users", methods=["GET"])
+@admin_required
+def get_users():
+    """List all non-admin contractor users"""
+    users = User.query.all()
+    return jsonify([
+        {"id": u.id, "email": u.email, "company_name": u.company_name, "trade": u.trade}
+        for u in users
+    ])
+
+
+# ---------------------------------------------------------------------------
+# Payment Callbacks
+# ---------------------------------------------------------------------------
+
+@app.route("/payment/success")
+def payment_success():
+    session_id = request.args.get("session_id")
+    lead_id = request.args.get("lead_id")
+    if not session_id or not lead_id:
+        return "Invalid payment link", 400
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+        if sess.payment_status == "paid":
+            lead = Lead.query.get(int(lead_id))
+            if lead:
+                lead.response_status = "deposit_paid"
+                lead.deposit_paid_at = datetime.utcnow()
+                lead.stripe_session_id = session_id
+                lead.deposit_amount = sess.amount_total / 100
+                db.session.commit()
+                send_email(
+                    f"Deposit Paid - Lead #{lead_id}",
+                    f"<p>Lead #{lead_id} deposit of <b>${lead.deposit_amount:.2f}</b> received.</p>"
+                    f"<p><a href='http://localhost:5003/lead/{lead_id}'>View Lead</a></p>",
+                )
+        return render_template_string("""
+            <!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:60px">
+            <h1 style="color:#48bb78">&#10003; Payment Successful!</h1>
+            <p>Your deposit has been received. A contractor will be in touch shortly.</p>
+            <p><a href="/dashboard">Return to Dashboard</a></p>
+            </body></html>
+        """)
+    except Exception as e:
+        log.error(f"Payment success error: {e}")
+        return f"Error processing payment: {e}", 500
+
+
+@app.route("/payment/cancel")
+def payment_cancel():
+    return render_template_string("""
+        <!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:60px">
+        <h1 style="color:#e53e3e">&#10007; Payment Cancelled</h1>
+        <p>No charges were made.</p>
+        <p><a href="/dashboard">Return to Dashboard</a></p>
+        </body></html>
+    """)
+
+
+# ---------------------------------------------------------------------------
 # Health Check
 # ---------------------------------------------------------------------------
 
@@ -517,28 +935,26 @@ with app.app_context():
         log.info("Admin user created: admin@contractor.app / admin123")
 
 
+# ---------------------------------------------------------------------------
+# Batch Scraping Scheduler
+# ---------------------------------------------------------------------------
 
-# Lead Review Routes
-@app.route("/review")
-@login_required
-def review_leads():
-    leads = Lead.query.filter_by(review_status='pending').order_by(Lead.id.desc()).limit(50).all()
-    stats = {
-        'pending': Lead.query.filter_by(review_status='pending').count(),
-        'approved': Lead.query.filter_by(review_status='approved').count(),
-        'rejected': Lead.query.filter_by(review_status='rejected').count()
-    }
-    return render_template('lead_review.html', leads=leads, stats=stats)
+def _scheduled_scrape():
+    keywords = os.environ.get("SCRAPE_KEYWORDS", "electrician,plumber,contractor").split(",")
+    locations = os.environ.get("SCRAPE_LOCATIONS", "Sarasota FL,North Port FL").split(",")
+    for kw in keywords:
+        for loc in locations:
+            scrape_reddit_background(kw.strip(), loc.strip(), app)
 
-@app.route("/api/review_lead/<int:lead_id>", methods=["POST"])
-@login_required
-def api_review_lead(lead_id):
-    lead = Lead.query.get(lead_id)
-    if lead:
-        lead.review_status = request.json.get('status')
-        db.session.commit()
-        return jsonify({'success': True})
-    return jsonify({'success': False})
+
+if os.environ.get("ENABLE_SCHEDULER", "false").lower() == "true":
+    from apscheduler.schedulers.background import BackgroundScheduler
+    _scheduler = BackgroundScheduler()
+    _interval = int(os.environ.get("SCRAPE_INTERVAL_HOURS", 6))
+    _scheduler.add_job(_scheduled_scrape, "interval", hours=_interval)
+    _scheduler.start()
+    log.info(f"Scheduler active: scraping every {_interval}h")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5003))

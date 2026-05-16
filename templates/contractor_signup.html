@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contractor Sign Up - Free Lead Generation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            max-width: 500px;
+            width: 90%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+        }
+        .highlight h3 {
+            color: #856404;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+        .highlight p {
+            color: #856404;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            color: #333;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .btn:hover {
+            background: #5568d3;
+        }
+        .features {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+        .features h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .features ul {
+            list-style: none;
+            padding: 0;
+        }
+        .features li {
+            padding: 8px 0;
+            color: #666;
+        }
+        .features li:before {
+            content: "✓ ";
+            color: #28a745;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔨 Contractor Sign Up</h1>
+        <p class="subtitle">Get qualified leads for FREE. Only pay 10% when you close a job.</p>
+        
+        <div class="highlight">
+            <h3>💰 No Monthly Fees!</h3>
+            <p>Unlike HomeAdvisor - we only win when you win. 10% commission on closed jobs only.</p>
+        </div>
+
+        <form id="signupForm" action="/contractor/signup" method="POST">
+            <div class="form-group">
+                <label for="company_name">Company Name *</label>
+                <input type="text" id="company_name" name="company_name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="name">Your Name *</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email *</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+
+            <div class="form-group">
+                <label for="phone">Phone *</label>
+                <input type="tel" id="phone" name="phone" required>
+            </div>
+
+            <div class="form-group">
+                <label for="trade">Trade/Service *</label>
+                <select id="trade" name="trade" required>
+                    <option value="">Select your trade...</option>
+                    <option value="electrician">Electrician</option>
+                    <option value="plumber">Plumber</option>
+                    <option value="hvac">HVAC</option>
+                    <option value="roofing">Roofing</option>
+                    <option value="landscaping">Landscaping</option>
+                    <option value="painting">Painting</option>
+                    <option value="remodeling">Remodeling</option>
+                    <option value="pool_service">Pool Service</option>
+                    <option value="real_estate">Real Estate Agent</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="license">License Number</label>
+                <input type="text" id="license" name="license">
+            </div>
+
+            <div class="form-group">
+                <label for="territory">Service Area *</label>
+                <input type="text" id="territory" name="territory" placeholder="e.g., North Port, Sarasota County" required>
+            </div>
+
+            <button type="submit" class="btn">🚀 Start Getting Free Leads</button>
+        </form>
+
+        <div class="features">
+            <h3>Why Join?</h3>
+            <ul>
+                <li>FREE qualified leads delivered daily</li>
+                <li>No monthly fees or subscriptions</li>
+                <li>Only 10% commission on closed jobs</li>
+                <li>Exclusive territories available</li>
+                <li>AI responds to customers 24/7</li>
+                <li>Cancel anytime, no contracts</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('signupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            
+            try {
+                const res = await fetch('/contractor/signup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await res.json();
+                
+                if (result.success) {
+                    alert('✅ Success! Check your email for next steps.');
+                    window.location = '/contractor/dashboard';
+                } else {
+                    alert('❌ Error: ' + (result.error || 'Signup failed'));
+                }
+            } catch (err) {
+                alert('❌ Error: ' + err.message);
+            }
+        });
+    </script>
+</body>
+</html>

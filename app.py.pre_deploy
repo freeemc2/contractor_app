@@ -1,0 +1,545 @@
+"""
+Contractor Lead Finder - Keyword-Generic Search System
+Finds warm leads from Reddit, Craigslist, social media for ANY keyword
+Multi-agent architecture with AI collation
+"""
+import os
+import json
+import time
+import logging
+from datetime import datetime, timedelta
+from functools import wraps
+
+from dotenv import load_dotenv
+load_dotenv()
+
+import stripe
+from datetime import datetime
+
+def parse_datetime(dt_str):
+    """Parse ISO datetime string to datetime object"""
+    if not dt_str:
+        return None
+    if isinstance(dt_str, datetime):
+        return dt_str
+    try:
+        return datetime.fromisoformat(dt_str)
+    except:
+        return None
+
+from flask import (
+    Flask, render_template, request, jsonify,
+    session, redirect, url_for, flash
+)
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# ---------------------------------------------------------------------------
+# App Config
+# ---------------------------------------------------------------------------
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "change-in-production")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", 
+    "postgresql://postgres:postgres@localhost/contractor_leads"
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_size": 20,
+    "pool_recycle": 3600,
+    "pool_pre_ping": True,
+}
+
+CORS(app)
+
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
+
+db = SQLAlchemy(app)
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+class User(db.Model):
+    """Contractor or business user"""
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    company_name = db.Column(db.String(255))
+    trade = db.Column(db.String(100))  # electrician, plumber, contractor
+    service_area = db.Column(db.String(255))  # cities/zip codes
+    is_admin = db.Column(db.Boolean, default=False)
+    trial_start = db.Column(db.DateTime, default=datetime.utcnow)
+    stripe_customer_id = db.Column(db.String(255))
+    stripe_subscription_id = db.Column(db.String(255))
+    subscription_status = db.Column(db.String(50), default="trial")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    
+    @property
+    def trial_active(self):
+        return datetime.utcnow() < self.trial_start + timedelta(days=3)
+    
+    @property
+    def has_access(self):
+        return self.trial_active or self.subscription_status == "active"
+
+
+class Lead(db.Model):
+    """Warm lead from any source"""
+    __tablename__ = "leads"
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # Source info
+    source = db.Column(db.String(100), index=True)  # reddit, facebook, craigslist, duckduckgo
+    source_url = db.Column(db.String(1000))
+    
+    # Lead content
+    keyword = db.Column(db.String(200), index=True)  # electrician, plumber, contractor
+    title = db.Column(db.String(500))
+    description = db.Column(db.Text)
+    post_text = db.Column(db.Text)  # Full original post
+    
+    # Contact info (extracted by AI)
+    customer_name = db.Column(db.String(255))
+    phone = db.Column(db.String(50))
+    email = db.Column(db.String(255))
+    
+    # Location
+    location = db.Column(db.String(255), index=True)
+    city = db.Column(db.String(200))
+    state = db.Column(db.String(10))
+    zip_code = db.Column(db.String(10))
+    lat = db.Column(db.Float, index=True)
+    lon = db.Column(db.Float, index=True)
+    
+    # Meta
+    urgency = db.Column(db.String(50))  # ASAP, this week, flexible
+    quality_score = db.Column(db.Float)  # AI-determined quality (0-1)
+    active = db.Column(db.Boolean, default=True, index=True)
+    assigned_to = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    status = db.Column(db.String(50), default="new", index=True)  # new, assigned, contacted, closed
+    review_status = db.Column(db.String(20), default="pending", index=True)  # pending, approved, rejected
+    
+    # Timestamps
+    posted_at = db.Column(db.DateTime)  # When customer posted
+    scraped_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    assigned_at = db.Column(db.DateTime)
+    
+    # AI collation
+    ai_processed = db.Column(db.Boolean, default=False)
+    ai_extracted_data = db.Column(db.JSON)  # Full AI extraction results
+
+
+class ScrapeJob(db.Model):
+    """Job queue for distributed agents"""
+    __tablename__ = "scrape_jobs"
+    id = db.Column(db.Integer, primary_key=True)
+    
+    keyword = db.Column(db.String(200), index=True)
+    location = db.Column(db.String(255))
+    review_status = db.Column(db.String(20), default="pending", index=True)  # pending, approved, rejected, maybe
+    source = db.Column(db.String(100))  # reddit, craigslist, facebook, duckduckgo
+    
+    status = db.Column(db.String(50), default="pending", index=True)  # pending, processing, completed, failed
+    assigned_agent = db.Column(db.String(100))  # Which agent is handling this
+    
+    results_count = db.Column(db.Integer, default=0)
+    error_message = db.Column(db.Text)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+
+
+class Agent(db.Model):
+    """Registered scraping agents"""
+    __tablename__ = "agents"
+    id = db.Column(db.Integer, primary_key=True)
+    
+    name = db.Column(db.String(100), unique=True, index=True)  # openclaw, github-proxy-1, cloudflare-worker
+    agent_type = db.Column(db.String(50))  # platform1, platform2, platform3
+    capabilities = db.Column(db.JSON)  # {sources: [reddit, craigslist], locations: [...]}
+    
+    status = db.Column(db.String(50), default="active")  # active, inactive, offline
+    last_ping = db.Column(db.DateTime, default=datetime.utcnow)
+    jobs_completed = db.Column(db.Integer, default=0)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        user = User.query.get(session["user_id"])
+        if not user or not user.is_admin:
+            flash("Admin access required")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ---------------------------------------------------------------------------
+# User Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/")
+def index():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+    return render_template("landing.html")
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        data = request.json
+        
+        # Validation
+        if User.query.filter_by(email=data["email"]).first():
+            return jsonify({"error": "Email already registered"}), 400
+        
+        # Create user
+        user = User(
+            email=data["email"],
+            password_hash=generate_password_hash(data["password"]),
+            company_name=data.get("company_name"),
+            trade=data.get("trade"),
+            service_area=data.get("service_area"),
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        session["user_id"] = user.id
+        log.info(f"New user registered: {user.email}")
+        
+        return jsonify({"success": True, "redirect": url_for("dashboard")})
+    
+    return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        data = request.json
+        user = User.query.filter_by(email=data["email"]).first()
+        
+        if user and check_password_hash(user.password_hash, data["password"]):
+            session["user_id"] = user.id
+            log.info(f"User logged in: {user.email}")
+            return jsonify({"success": True, "redirect": url_for("dashboard")})
+        
+        return jsonify({"error": "Invalid credentials"}), 401
+    
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.pop("user_id", None)
+    return redirect(url_for("index"))
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    user = User.query.get(session["user_id"])
+    
+    # Get user's leads
+    # Show all leads for admin
+    if user.email == "admin@contractor.app":
+        leads = Lead.query.filter(Lead.active == True).order_by(Lead.scraped_at.desc()).all()
+    else:
+        leads = Lead.query.filter(
+            Lead.active == True,
+            Lead.keyword == user.trade,
+        ).order_by(Lead.scraped_at.desc()).limit(50).all()
+    
+    stats = {
+        "new_leads": Lead.query.filter_by(status="new").count(),
+        "assigned_leads": Lead.query.filter_by(assigned_to=user.id).count(),
+        "trial_days_left": max(0, (user.trial_start + timedelta(days=3) - datetime.utcnow()).days),
+        "subscription_active": user.subscription_status == "active",
+    }
+    
+    return render_template("dashboard.html", user=user, leads=leads, stats=stats)
+
+
+# ---------------------------------------------------------------------------
+# Lead Management API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/leads", methods=["GET"])
+@login_required
+def get_leads():
+    """Get leads for contractor"""
+    user = User.query.get(session["user_id"])
+    
+    keyword = request.args.get("keyword", user.trade)
+    location = request.args.get("location", user.service_area)
+    status = request.args.get("status", "new")
+    
+    query = Lead.query.filter_by(active=True)
+    
+    if keyword:
+        query = query.filter_by(keyword=keyword)
+    if status:
+        query = query.filter_by(status=status)
+    
+    leads = query.order_by(Lead.scraped_at.desc()).limit(100).all()
+    
+    return jsonify([{
+        "id": lead.id,
+        "keyword": lead.keyword,
+        "title": lead.title,
+        "description": lead.description,
+        "source": lead.source,
+        "source_url": lead.source_url,
+        "location": lead.location,
+        "customer_name": lead.customer_name,
+        "phone": lead.phone,
+        "email": lead.email,
+        "urgency": lead.urgency,
+        "quality_score": lead.quality_score,
+        "posted_at": lead.posted_at.isoformat() if lead.posted_at else None,
+        "scraped_at": lead.scraped_at.isoformat(),
+    } for lead in leads])
+
+
+@app.route("/api/leads/<int:lead_id>/claim", methods=["POST"])
+@login_required
+def claim_lead(lead_id):
+    """Contractor claims a lead"""
+    user = User.query.get(session["user_id"])
+    lead = Lead.query.get_or_404(lead_id)
+    
+    if lead.assigned_to:
+        return jsonify({"error": "Lead already claimed"}), 400
+    
+    lead.assigned_to = user.id
+    lead.status = "assigned"
+    lead.assigned_at = datetime.utcnow()
+    db.session.commit()
+    
+    log.info(f"Lead {lead_id} claimed by user {user.id}")
+    
+    return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# Agent API - Job Queue System
+# ---------------------------------------------------------------------------
+
+AGENT_KEY = os.environ.get("AGENT_KEY", "change-this-secret")
+
+
+def verify_agent(request):
+    return request.headers.get("X-Agent-Key") == AGENT_KEY
+
+
+@app.route("/api/agents/register", methods=["POST"])
+def register_agent():
+    """Agent registers itself"""
+    if not verify_agent(request):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.json
+    
+    agent = Agent.query.filter_by(name=data["name"]).first()
+    if not agent:
+        agent = Agent(
+            name=data["name"],
+            agent_type=data["agent_type"],
+            capabilities=data.get("capabilities", {}),
+        )
+        db.session.add(agent)
+    else:
+        agent.last_ping = datetime.utcnow()
+        agent.status = "active"
+    
+    db.session.commit()
+    
+    return jsonify({"success": True, "agent_id": agent.id})
+
+
+@app.route("/api/jobs/next", methods=["GET"])
+def get_next_job():
+    """Agent polls for next job"""
+    if not verify_agent(request):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    agent_name = request.args.get("agent")
+    
+    # Find pending job
+    job = ScrapeJob.query.filter_by(status="pending").first()
+    
+    if not job:
+        return jsonify({"job": None})
+    
+    # Assign to agent
+    job.status = "processing"
+    job.assigned_agent = agent_name
+    job.started_at = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({
+        "job_id": job.id,
+        "keyword": job.keyword,
+        "location": job.location,
+        "source": job.source,
+    })
+
+
+@app.route("/api/jobs/<int:job_id>/submit", methods=["POST"])
+def submit_job_results(job_id):
+    """Agent submits scraped results"""
+    if not verify_agent(request):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    job = ScrapeJob.query.get_or_404(job_id)
+    data = request.json
+    
+    # Add leads to database
+    leads_added = 0
+    for result in data.get("results", []):
+        lead = Lead(
+            source=job.source,
+            keyword=job.keyword,
+            location=job.location,
+            title=result.get("title"),
+            description=result.get("description"),
+            post_text=result.get("post_text"),
+            source_url=result.get("url"),
+            posted_at=result.get("posted_at"),
+        )
+        db.session.add(lead)
+        leads_added += 1
+    
+    # Mark job complete
+    job.status = "completed"
+    job.completed_at = datetime.utcnow()
+    job.results_count = leads_added
+    db.session.commit()
+    
+    log.info(f"Job {job_id} completed: {leads_added} leads added")
+    
+    return jsonify({"success": True, "leads_added": leads_added})
+
+
+# ---------------------------------------------------------------------------
+# Admin - Job Creation
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/jobs/create", methods=["POST"])
+@admin_required
+def create_scrape_jobs():
+    """Admin creates scrape jobs"""
+    data = request.json
+    
+    keywords = data.get("keywords", ["electrician", "plumber", "contractor"])
+    locations = data.get("locations", ["North Port FL", "Sarasota FL"])
+    sources = data.get("sources", ["reddit", "craigslist", "duckduckgo"])
+    
+    jobs_created = 0
+    for keyword in keywords:
+        for location in locations:
+            for source in sources:
+                job = ScrapeJob(
+                    keyword=keyword,
+                    location=location,
+                    source=source,
+                )
+                db.session.add(job)
+                jobs_created += 1
+    
+    db.session.commit()
+    
+    log.info(f"Created {jobs_created} scrape jobs")
+    
+    return jsonify({"success": True, "jobs_created": jobs_created})
+
+
+# ---------------------------------------------------------------------------
+# Health Check
+# ---------------------------------------------------------------------------
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "platform": "contractor-lead-finder",
+        "agents": Agent.query.filter_by(status="active").count(),
+        "pending_jobs": ScrapeJob.query.filter_by(status="pending").count(),
+        "total_leads": Lead.query.filter_by(active=True).count(),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Initialize Database
+# ---------------------------------------------------------------------------
+
+with app.app_context():
+    db.create_all()
+    
+    # Create admin user if doesn't exist
+    if not User.query.filter_by(email="admin@contractor.app").first():
+        admin = User(
+            email="admin@contractor.app",
+            password_hash=generate_password_hash("admin123"),
+            is_admin=True,
+            company_name="Admin",
+        )
+        db.session.add(admin)
+        db.session.commit()
+        log.info("Admin user created: admin@contractor.app / admin123")
+
+
+
+# Lead Review Routes
+@app.route("/review")
+@login_required
+def review_leads():
+    leads = Lead.query.filter_by(review_status='pending').order_by(Lead.id.desc()).limit(50).all()
+    stats = {
+        'pending': Lead.query.filter_by(review_status='pending').count(),
+        'approved': Lead.query.filter_by(review_status='approved').count(),
+        'rejected': Lead.query.filter_by(review_status='rejected').count()
+    }
+    return render_template('lead_review.html', leads=leads, stats=stats)
+
+@app.route("/api/review_lead/<int:lead_id>", methods=["POST"])
+@login_required
+def api_review_lead(lead_id):
+    lead = Lead.query.get(lead_id)
+    if lead:
+        lead.review_status = request.json.get('status')
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False})
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5003))
+    app.run(host="0.0.0.0", port=port, debug=True)
