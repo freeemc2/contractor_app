@@ -1,0 +1,24 @@
+<!DOCTYPE html><html><head><title>Lead Review</title>
+<style>body{font-family:Arial;background:#f5f5f5;margin:0}.lang-toggle{position:fixed;top:20px;right:20px;background:white;padding:10px 20px;border-radius:8px;cursor:pointer}.header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:30px;text-align:center}.stats{display:flex;gap:20px;padding:20px;max-width:1200px;margin:0 auto}.stat-box{flex:1;background:white;padding:25px;border-radius:12px;text-align:center}.stat-box h3{font-size:36px;color:#667eea}.lead-card{background:white;margin:20px auto;max-width:1200px;padding:20px;border-radius:12px}.lead-actions{display:flex;gap:10px;margin-top:15px}.btn{padding:12px 24px;border:none;border-radius:8px;cursor:pointer;color:white}.btn-approve{background:#4CAF50}.btn-reject{background:#f44336}.btn-maybe{background:#ff9800}.btn-view{background:#2196F3}</style></head><body>
+<div class="lang-toggle" onclick="toggleLanguage()"><span id="lang-icon">🇺🇸 EN</span></div>
+<div class="header"><h1>Lead Review</h1></div>
+<div class="stats">
+<div class="stat-box"><h3>{{stats.pending}}</h3><p>Pending</p></div>
+<div class="stat-box"><h3>{{stats.approved}}</h3><p>Approved</p></div>
+<div class="stat-box"><h3>{{stats.rejected}}</h3><p>Rejected</p></div>
+</div>
+{% for lead in leads %}
+<div class="lead-card" id="lead-{{lead.id}}">
+<h3>{{lead.title}}</h3>
+<p>{{lead.description or lead.post_text[:300]}}</p>
+<div class="lead-actions">
+<button class="btn btn-view" onclick="window.open('{{lead.source_url}}','_blank')">View</button>
+<button class="btn btn-reject" onclick="reviewLead({{lead.id}},'rejected')">❌ Reject</button>
+<button class="btn btn-maybe" onclick="reviewLead({{lead.id}},'maybe')">⏸️ Maybe</button>
+<button class="btn btn-approve" onclick="reviewLead({{lead.id}},'approved')">✅ Approve</button>
+</div></div>
+{% endfor %}
+<script>
+function toggleLanguage(){alert('ES/EN')}
+function reviewLead(id,status){fetch('/api/review_lead/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}).then(()=>location.reload())}
+</script></body></html>

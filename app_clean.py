@@ -123,7 +123,6 @@ class Lead(db.Model):
     active = db.Column(db.Boolean, default=True, index=True)
     assigned_to = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     status = db.Column(db.String(50), default="new", index=True)  # new, assigned, contacted, closed
-    review_status = db.Column(db.String(20), default="pending", index=True)  # pending, approved, rejected
     
     # Timestamps
     posted_at = db.Column(db.DateTime)  # When customer posted
@@ -142,7 +141,6 @@ class ScrapeJob(db.Model):
     
     keyword = db.Column(db.String(200), index=True)
     location = db.Column(db.String(255))
-    review_status = db.Column(db.String(20), default="pending", index=True)  # pending, approved, rejected, maybe
     source = db.Column(db.String(100))  # reddit, craigslist, facebook, duckduckgo
     
     status = db.Column(db.String(50), default="pending", index=True)  # pending, processing, completed, failed
@@ -516,29 +514,6 @@ with app.app_context():
         db.session.commit()
         log.info("Admin user created: admin@contractor.app / admin123")
 
-
-
-# Lead Review Routes
-@app.route("/review")
-@login_required
-def review_leads():
-    leads = Lead.query.filter_by(review_status='pending').order_by(Lead.id.desc()).limit(50).all()
-    stats = {
-        'pending': Lead.query.filter_by(review_status='pending').count(),
-        'approved': Lead.query.filter_by(review_status='approved').count(),
-        'rejected': Lead.query.filter_by(review_status='rejected').count()
-    }
-    return render_template('lead_review.html', leads=leads, stats=stats)
-
-@app.route("/api/review_lead/<int:lead_id>", methods=["POST"])
-@login_required
-def api_review_lead(lead_id):
-    lead = Lead.query.get(lead_id)
-    if lead:
-        lead.review_status = request.json.get('status')
-        db.session.commit()
-        return jsonify({'success': True})
-    return jsonify({'success': False})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5003))

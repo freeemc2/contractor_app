@@ -1,8 +1,31 @@
-*.pyc
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Flask
 instance/
-.env
 *.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
 *.log
-venv/
+nohup.out
+
+# Secrets
+reddit_config.py
+*_secret*
+*_password*
+
+# Temporary
+*.backup
 .DS_Store

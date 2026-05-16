@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+from flask import Flask, render_template, request, jsonify, redirect, render_template_string
+import sqlite3
+import os
+import stripe
+from datetime import datetime
+from payment_processor import PaymentProcessor
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+payment_processor = PaymentProcessor()
+DB_PATH = 'instance/contractor_leads.db'
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+@app.route('/')
+def index():
+    return redirect('/dashboard')
+
+@app.route('/dashboard')
+def dashboard():
+    conn = get_db()
+    leads = conn.execute("""
+        SELECT id, title, body, detected_trade, location, subreddit,
+               response_status, deposit_amount, deposit_paid_at, deposit_payment_link
+        FROM leads ORDER BY created_at DESC LIMIT 100
+    """).fetchall()
+    
+    stats = {'total': len(leads), 'pending': 0, 'responded': 0, 'qualified': 0, 'paid': 0, 'revenue': 0}
+    
+    for lead in leads:
+        status = lead['response_status'] or 'pending'
+        stats[{'pending': 'pending', 'responded': 'responded', 'qualified': 'qualified'}.get(status, 'pending')] = stats.get(status, 0) + 1
+        if status == 'deposit_paid':
+            stats['paid'] += 1
+            if lead['deposit_amount']:
+                stats['revenue'] += float(lead['deposit_amount'])
+    
+    conn.close()
+    return render_template_string(DASHBOARD_HTML, leads=leads, stats=stats)
+
+@app.route('/api/update_status/<int:lead_id>', methods=['POST'])
+def update_status(lead_id):
+    status = request.json.get('status')
+    conn = get_db()
+    conn.execute("UPDATE leads SET response_status=? WHERE id=?", (status, lead_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/send_payment/<int:lead_id>', methods=['POST'])
+def api_send_payment(lead_id):
+    conn = get_db()
+    lead = conn.execute("SELECT title FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        return jsonify({'success': False})
+    
+    result = payment_processor.create_deposit_link(lead_id, 800, lead['title'][:50])
+    if result:
+        conn.execute("UPDATE leads SET response_status='deposit_sent', deposit_payment_link=?, deposit_amount=? WHERE id=?",
+                    (result['payment_url'], result['deposit_amount'], lead_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'url': result['payment_url'], 'amount': result['deposit_amount']})
+    return jsonify({'success': False})
+
+@app.route('/api/run_agent', methods=['POST'])
+def api_run_agent():
+    import subprocess
+    subprocess.Popen(['python3', 'response_agent.py'])
+    return jsonify({'message': 'AI Agent started'})
+
+@app.route('/payment/success')
+def payment_success():
+    session_id, lead_id = request.args.get('session_id'), request.args.get('lead_id')
+    if session_id and lead_id:
+        session = stripe.checkout.Session.retrieve(session_id)
+        if session.payment_status == 'paid':
+            conn = get_db()
+            conn.execute("UPDATE leads SET response_status='deposit_paid', deposit_paid_at=?, stripe_session_id=?, deposit_amount=? WHERE id=?",
+                        (datetime.now(), session_id, session.amount_total/100, lead_id))
+            conn.commit()
+            conn.close()
+            return f'<h1>✓ Payment Successful!</h1><p>Deposit: ${session.amount_total/100:.2f}</p>'
+    return 'Error', 400
+
+@app.route('/payment/cancel')
+def payment_cancel():
+    return '<h1>✗ Payment Cancelled</h1><p>No charges made.</p>'
+
+DASHBOARD_HTML = '''<!DOCTYPE html>
+<html><head><title>Dashboard</title>
+<style>
+body{font-family:Arial;background:#f5f5f5;padding:20px;margin:0}
+.header{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:30px;border-radius:10px;margin-bottom:20px}
+.header h1{margin:0;font-size:32px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;margin-bottom:20px}
+.stat{background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,.1)}
+.stat h3{margin:0 0 10px;color:#666;font-size:14px}
+.stat .num{font-size:32px;font-weight:bold;color:#667eea}
+.stat.paid .num{color:#48bb78}
+.stat.revenue .num{color:#ed8936}
+.controls{background:#fff;padding:15px;border-radius:8px;margin-bottom:20px}
+.controls button{padding:10px 20px;background:#667eea;color:#fff;border:none;border-radius:5px;cursor:pointer;margin-right:10px}
+.controls button:hover{background:#5568d3}
+.controls button.sec{background:#718096}
+table{width:100%;background:#fff;border-radius:8px;border-collapse:collapse;overflow:hidden}
+th{background:#f7fafc;padding:12px;text-align:left;font-weight:600;border-bottom:2px solid #e2e8f0}
+td{padding:12px;border-bottom:1px solid #e2e8f0}
+tr:hover{background:#f7fafc}
+.badge{display:inline-block;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600}
+.badge.pending{background:#fed7d7;color:#c53030}
+.badge.responded{background:#bee3f8;color:#2c5282}
+.badge.qualified{background:#feebc8;color:#c05621}
+.badge.deposit-sent{background:#e6fffa;color:#234e52}
+.badge.deposit-paid{background:#c6f6d5;color:#22543d}
+.btn{padding:6px 12px;background:#667eea;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;margin-right:5px}
+.btn:hover{background:#5568d3}
+.btn.success{background:#48bb78}
+.btn.sec{background:#718096}
+</style></head><body>
+<div class="header"><h1>🚀 Contractor Dashboard</h1><p>Lead Management & Payments</p></div>
+<div class="stats">
+<div class="stat"><h3>Total</h3><div class="num">{{stats.total}}</div></div>
+<div class="stat"><h3>Pending</h3><div class="num">{{stats.pending}}</div></div>
+<div class="stat"><h3>Responded</h3><div class="num">{{stats.responded}}</div></div>
+<div class="stat paid"><h3>Paid</h3><div class="num">{{stats.paid}}</div></div>
+<div class="stat revenue"><h3>Revenue</h3><div class="num">${{"%.0f"|format(stats.revenue)}}</div></div>
+</div>
+<div class="controls">
+<button onclick="runAgent()">▶ Run AI Agent</button>
+<button onclick="location.reload()" class="sec">🔄 Refresh</button>
+</div>
+<table>
+<tr><th>ID</th><th>Title</th><th>Trade</th><th>Location</th><th>Status</th><th>Deposit</th><th>Actions</th></tr>
+{%for l in leads%}
+<tr>
+<td>#{{l.id}}</td>
+<td>{{l.title[:50]}}</td>
+<td>{{l.detected_trade or'-'}}</td>
+<td>{{l.location or'-'}}</td>
+<td><span class="badge {{(l.response_status or'pending')|replace('_','-')}}">{{(l.response_status or'pending')|replace('_',' ')|title}}</span></td>
+<td>{%if l.deposit_amount%}${{l.deposit_amount}}{%if l.deposit_paid_at%} ✓{%endif%}{%else%}-{%endif%}</td>
+<td>
+{%if not l.response_status or l.response_status=='pending'%}<button class="btn" onclick="mark({{l.id}})">Qualify</button>{%endif%}
+{%if l.response_status=='qualified'%}<button class="btn success" onclick="pay({{l.id}})">Send Payment</button>{%endif%}
+{%if l.deposit_payment_link%}<button class="btn sec" onclick="window.open('{{l.deposit_payment_link}}')">Link</button>{%endif%}
+</td>
+</tr>
+{%endfor%}
+</table>
+<script>
+function mark(id){if(confirm(`Qualify #${id}?`))fetch(`/api/update_status/${id}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'qualified'})}).then(()=>location.reload())}
+function pay(id){if(confirm(`Send payment #${id}?`))fetch(`/api/send_payment/${id}`,{method:'POST',headers:{'Content-Type':'application/json'}}).then(r=>r.json()).then(d=>{if(d.success){alert(`Link created!\\n$${d.amount}\\n${d.url}`);location.reload()}else alert('Error')})}
+function runAgent(){if(confirm('Run AI?'))fetch('/api/run_agent',{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message);setTimeout(()=>location.reload(),2000)})}
+</script>
+</body></html>'''
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5003)), debug=True)
