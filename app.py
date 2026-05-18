@@ -956,6 +956,40 @@ if os.environ.get("ENABLE_SCHEDULER", "false").lower() == "true":
     log.info(f"Scheduler active: scraping every {_interval}h")
 
 
+
+# Routes moved before main
+@app.route('/public')
+def public_view():
+    leads = Lead.query.all()
+    html = '<h1>99 Contractor Leads</h1><ul>'
+    for lead in leads:
+        html += f'<li><a href="{lead.source_url}">{lead.title}</a> - {lead.location}</li>'
+    html += '</ul>'
+    return html
+
+# ============================================================================
+# PHASE 3: CONTRACTOR LOGIN & ASSIGNMENT SYSTEM
+# ============================================================================
+
+
+# NEW ROUTES
+@app.route('/contractor/login', methods=['GET', 'POST'])
+def contractor_login():
+    if request.method == 'GET':
+        return render_template('contractor_login.html')
+    data = request.get_json()
+    email, password = data.get('email'), data.get('password')
+    user = User.query.filter_by(email=email, role='contractor').first()
+    if user and user.check_password(password):
+        session['user_id'], session['role'] = user.id, 'contractor'
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+
+@app.route('/revenue')
+def revenue_dash():
+    return render_template('revenue_dashboard.html')
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5003))
     app.run(host="0.0.0.0", port=port, debug=True)
+
+

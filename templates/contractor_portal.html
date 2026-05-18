@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contractor Lead Portal - 99 Available Leads</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        .search-bar {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .search-input {
+            flex: 1;
+            min-width: 250px;
+            padding: 12px 20px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        select {
+            padding: 12px 20px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            background: white;
+            cursor: pointer;
+        }
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .stats {
+            padding: 20px;
+            background: #fff3cd;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #856404;
+        }
+        .leads-container {
+            padding: 20px;
+        }
+        .lead-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        .lead-card:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+        .lead-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .lead-meta {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .lead-tag {
+            display: inline-block;
+            padding: 5px 12px;
+            background: #e9ecef;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #495057;
+        }
+        .lead-tag.trade {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        .lead-tag.location {
+            background: #d4edda;
+            color: #155724;
+        }
+        .lead-link {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .lead-link:hover {
+            background: #5568d3;
+        }
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔨 Contractor Lead Portal</h1>
+            <p>Browse and claim available contractor leads - Updated in real-time</p>
+        </div>
+
+        <div class="search-bar">
+            <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by title, description, or keyword...">
+            <select id="tradeFilter">
+                <option value="">All Trades</option>
+                <option value="electrician">Electrician</option>
+                <option value="plumber">Plumber</option>
+                <option value="hvac">HVAC</option>
+                <option value="roofing">Roofing</option>
+                <option value="landscaping">Landscaping</option>
+                <option value="painting">Painting</option>
+                <option value="remodeling">Remodeling</option>
+                <option value="pool">Pool Service</option>
+                <option value="real estate">Real Estate</option>
+                <option value="contractor">General Contractor</option>
+            </select>
+            <select id="locationFilter">
+                <option value="">All Locations</option>
+                <option value="North Port">North Port</option>
+                <option value="Sarasota">Sarasota</option>
+                <option value="Tampa">Tampa</option>
+                <option value="Florida">Florida</option>
+            </select>
+            <select id="sortOrder">
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+            </select>
+        </div>
+
+        <div class="stats" id="stats">
+            Loading leads...
+        </div>
+
+        <div class="leads-container" id="leadsContainer">
+            <div class="no-results">Loading leads...</div>
+        </div>
+    </div>
+
+    <script>
+        let allLeads = [];
+
+        // Fetch leads from API
+        async function loadLeads() {
+            try {
+                const response = await fetch('/api/leads');
+                const data = await response.json();
+                allLeads = data.leads || [];
+                filterAndDisplayLeads();
+            } catch (error) {
+                document.getElementById('leadsContainer').innerHTML = 
+                    '<div class="no-results">❌ Error loading leads. Please refresh the page.</div>';
+            }
+        }
+
+        // Filter and display leads
+        function filterAndDisplayLeads() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const tradeFilter = document.getElementById('tradeFilter').value.toLowerCase();
+            const locationFilter = document.getElementById('locationFilter').value.toLowerCase();
+            const sortOrder = document.getElementById('sortOrder').value;
+
+            let filtered = allLeads.filter(lead => {
+                const matchesSearch = !searchTerm || 
+                    lead.title.toLowerCase().includes(searchTerm) ||
+                    (lead.description && lead.description.toLowerCase().includes(searchTerm)) ||
+                    (lead.keyword && lead.keyword.toLowerCase().includes(searchTerm));
+                
+                const matchesTrade = !tradeFilter || 
+                    (lead.keyword && lead.keyword.toLowerCase().includes(tradeFilter));
+                
+                const matchesLocation = !locationFilter || 
+                    (lead.location && lead.location.toLowerCase().includes(locationFilter));
+                
+                return matchesSearch && matchesTrade && matchesLocation;
+            });
+
+            // Sort
+            if (sortOrder === 'newest') {
+                filtered.sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
+            } else {
+                filtered.sort((a, b) => new Date(a.posted_at) - new Date(b.posted_at));
+            }
+
+            displayLeads(filtered);
+        }
+
+        // Display leads
+        function displayLeads(leads) {
+            const container = document.getElementById('leadsContainer');
+            const stats = document.getElementById('stats');
+            
+            stats.textContent = `📊 Showing ${leads.length} of ${allLeads.length} leads`;
+
+            if (leads.length === 0) {
+                container.innerHTML = '<div class="no-results">No leads match your search criteria. Try adjusting your filters.</div>';
+                return;
+            }
+
+            container.innerHTML = leads.map(lead => `
+                <div class="lead-card">
+                    <div class="lead-title">${escapeHtml(lead.title)}</div>
+                    <div class="lead-meta">
+                        ${lead.keyword ? `<span class="lead-tag trade">🔧 ${escapeHtml(lead.keyword)}</span>` : ''}
+                        ${lead.location ? `<span class="lead-tag location">📍 ${escapeHtml(lead.location)}</span>` : ''}
+                        <span class="lead-tag">📅 ${formatDate(lead.posted_at)}</span>
+                    </div>
+                    ${lead.description ? `<p style="margin: 10px 0; color: #666;">${escapeHtml(lead.description.substring(0, 200))}${lead.description.length > 200 ? '...' : ''}</p>` : ''}
+                    <a href="${lead.source_url}" target="_blank" class="lead-link">View Full Lead →</a>
+                </div>
+            `).join('');
+        }
+
+        // Utilities
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input', filterAndDisplayLeads);
+        document.getElementById('tradeFilter').addEventListener('change', filterAndDisplayLeads);
+        document.getElementById('locationFilter').addEventListener('change', filterAndDisplayLeads);
+        document.getElementById('sortOrder').addEventListener('change', filterAndDisplayLeads);
+
+        // Load leads on page load
+        loadLeads();
+    </script>
+</body>
+</html>

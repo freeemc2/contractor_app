@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contractor Lead Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .lang-toggle {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .lang-toggle:hover { background: rgba(255,255,255,0.3); }
+        
+        .search-section {
+            background: white;
+            padding: 30px;
+            margin: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .search-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr auto;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .keyword-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        select, input {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            width: 100%;
+        }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary { background: #4caf50; color: white; }
+        .btn-primary:hover { background: #45a049; }
+        
+        .btn-secondary { background: #2196f3; color: white; }
+        .btn-secondary:hover { background: #1976d2; }
+        
+        .btn-danger { background: #f44336; color: white; }
+        .btn-danger:hover { background: #d32f2f; }
+        
+        .keyword-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .chip {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .chip .remove {
+            cursor: pointer;
+            font-weight: bold;
+            color: #f44336;
+        }
+        
+        .lead-table {
+            background: white;
+            margin: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+        }
+        
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        tr:hover { background: #f8f9fa; }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-pending { background: #fff3cd; color: #856404; }
+        .status-responded { background: #d1ecf1; color: #0c5460; }
+        .status-qualified { background: #d4edda; color: #155724; }
+        
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-edit { background: #ff9800; color: white; }
+        .btn-delete { background: #f44336; color: white; }
+        .btn-view { background: #2196f3; color: white; }
+        
+        .revenue-widget {
+            background: white;
+            padding: 20px;
+            margin: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+        
+        .stat-card {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+        }
+        
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🔨 Contractor Lead Dashboard</h1>
+            <p>Manage leads, track revenue, and grow your business</p>
+        </div>
+        <button class="lang-toggle" onclick="toggleLanguage()">🌐 Español</button>
+    </div>
+
+    <div class="revenue-widget">
+        <div class="stat-card">
+            <div class="stat-label">Total Leads</div>
+            <div class="stat-number" id="totalLeads">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Active Contractors</div>
+            <div class="stat-number" id="activeContractors">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Closed Deals</div>
+            <div class="stat-number" id="closedDeals">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Revenue (10%)</div>
+            <div class="stat-number" id="revenue">$0</div>
+        </div>
+    </div>
+
+    <div class="search-section">
+        <h2>🔍 Search & Scrape Leads</h2>
+        
+        <div class="search-grid">
+            <div class="keyword-selector">
+                <select id="categorySelect" onchange="loadKeywords()">
+                    <optgroup label="Home Services">
+                        <option value="roofing">Roofing</option>
+                        <option value="hvac">HVAC</option>
+                        <option value="plumbing">Plumbing</option>
+                        <option value="electrical">Electrical</option>
+                        <option value="solar">Solar</option>
+                        <option value="landscaping">Landscaping</option>
+                        <option value="painting">Painting</option>
+                        <option value="masonry">Masonry</option>
+                        <option value="concrete">Concrete</option>
+                        <option value="pool">Pool Service</option>
+                        <option value="cleaning">Cleaning/Maid</option>
+                    </optgroup>
+                    <optgroup label="Professional Services">
+                        <option value="real-estate">Real Estate</option>
+                        <option value="mortgage">Mortgage/Lending</option>
+                        <option value="insurance">Insurance</option>
+                        <option value="legal">Legal/Title</option>
+                        <option value="inspection">Home Inspection</option>
+                    </optgroup>
+                    <option value="custom">Custom Keywords</option>
+                </select>
+                
+                <select id="keywordSelect" multiple size="5" style="min-width: 300px;">
+                    <!-- Dynamically populated -->
+                </select>
+            </div>
+            
+            <input type="text" id="locationInput" placeholder="Location (e.g., Tampa FL)">
+            
+            <select id="radiusSelect">
+                <option value="10">10 miles</option>
+                <option value="25" selected>25 miles</option>
+                <option value="50">50 miles</option>
+                <option value="100">100 miles</option>
+            </select>
+            
+            <button class="btn btn-primary" onclick="startScrape()">🚀 Start Scrape</button>
+        </div>
+        
+        <div class="keyword-chips" id="selectedKeywords">
+            <!-- Selected keywords appear here as chips -->
+        </div>
+    </div>
+
+    <div class="lead-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Category</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Assigned To</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="leadsTableBody">
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 40px;">
+                        Loading leads...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // Keyword database
+        const KEYWORDS = {
+            roofing: ['roof', 'roofer', 'roofing', 'shingles', 'leak', 'roof repair'],
+            hvac: ['hvac', 'ac', 'air conditioning', 'heating', 'furnace', 'heat pump'],
+            plumbing: ['plumber', 'plumbing', 'pipe', 'leak', 'drain', 'toilet', 'faucet'],
+            electrical: ['electrician', 'electrical', 'wiring', 'outlet', 'circuit'],
+            solar: ['solar', 'solar panel', 'solar installation', 'solar energy'],
+            landscaping: ['landscaping', 'lawn', 'lawn care', 'tree removal', 'yard cleanup'],
+            painting: ['painter', 'painting', 'paint job'],
+            masonry: ['masonry', 'brick', 'block', 'stone', 'tile'],
+            concrete: ['concrete', 'cement', 'sidewalk', 'driveway', 'stucco'],
+            pool: ['pool', 'pool service', 'pool cleaning', 'pool repair'],
+            cleaning: ['maid', 'cleaning service', 'house cleaning'],
+            'real-estate': ['real estate', 'agent', 'realtor', 'broker', 'property'],
+            mortgage: ['mortgage', 'lender', 'loan', 'finance', 'refinance'],
+            insurance: ['insurance', 'insurance agent', 'flood insurance', 'home insurance'],
+            legal: ['attorney', 'title company', 'closing attorney', 'real estate lawyer'],
+            inspection: ['home inspection', 'inspector', 'property inspection']
+        };
+
+        let selectedKeywords = [];
+        let currentLang = 'en';
+
+        const translations = {
+            en: {
+                title: 'Contractor Lead Dashboard',
+                toggleBtn: '🌐 Español',
+                totalLeads: 'Total Leads',
+                activeContractors: 'Active Contractors',
+                closedDeals: 'Closed Deals',
+                revenue: 'Revenue (10%)'
+            },
+            es: {
+                title: 'Panel de Control de Contactos',
+                toggleBtn: '🌐 English',
+                totalLeads: 'Total Contactos',
+                activeContractors: 'Contratistas Activos',
+                closedDeals: 'Negocios Cerrados',
+                revenue: 'Ingresos (10%)'
+            }
+        };
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'es' : 'en';
+            document.querySelector('h1').textContent = '🔨 ' + translations[currentLang].title;
+            document.querySelector('.lang-toggle').textContent = translations[currentLang].toggleBtn;
+            document.querySelectorAll('.stat-label')[0].textContent = translations[currentLang].totalLeads;
+            document.querySelectorAll('.stat-label')[1].textContent = translations[currentLang].activeContractors;
+            document.querySelectorAll('.stat-label')[2].textContent = translations[currentLang].closedDeals;
+            document.querySelectorAll('.stat-label')[3].textContent = translations[currentLang].revenue;
+        }
+
+        function loadKeywords() {
+            const category = document.getElementById('categorySelect').value;
+            const keywordSelect = document.getElementById('keywordSelect');
+            
+            keywordSelect.innerHTML = '';
+            
+            if (category === 'custom') {
+                const option = document.createElement('option');
+                option.value = '__custom__';
+                option.textContent = 'Enter custom keyword below';
+                keywordSelect.appendChild(option);
+            } else if (KEYWORDS[category]) {
+                KEYWORDS[category].forEach(kw => {
+                    const option = document.createElement('option');
+                    option.value = kw;
+                    option.textContent = kw;
+                    keywordSelect.appendChild(option);
+                });
+            }
+        }
+
+        function startScrape() {
+            const category = document.getElementById('categorySelect').value;
+            const keywordSelect = document.getElementById('keywordSelect');
+            const location = document.getElementById('locationInput').value;
+            const radius = document.getElementById('radiusSelect').value;
+            
+            const selectedOptions = Array.from(keywordSelect.selectedOptions).map(opt => opt.value);
+            
+            if (selectedOptions.length === 0) {
+                alert('Please select at least one keyword');
+                return;
+            }
+            
+            if (!location) {
+                alert('Please enter a location');
+                return;
+            }
+            
+            if (confirm(`Start scrape for ${selectedOptions.length} keywords in ${location}?`)) {
+                selectedKeywords = selectedOptions;
+                updateKeywordChips();
+                
+                // Call API to start scrape
+                fetch('/api/bulk_scrape', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        keywords: selectedOptions,
+                        location: location,
+                        radius: radius
+                    })
+                }).then(r => r.json())
+                  .then(data => {
+                      if (data.success) {
+                          alert('✅ Scrape started! Results will appear shortly.');
+                          setTimeout(() => loadLeads(), 3000);
+                      } else {
+                          alert('❌ Error: ' + data.error);
+                      }
+                  });
+            }
+        }
+
+        function updateKeywordChips() {
+            const container = document.getElementById('selectedKeywords');
+            container.innerHTML = selectedKeywords.map(kw => 
+                `<div class="chip">${kw} <span class="remove" onclick="removeKeyword('${kw}')">×</span></div>`
+            ).join('');
+        }
+
+        function removeKeyword(kw) {
+            selectedKeywords = selectedKeywords.filter(k => k !== kw);
+            updateKeywordChips();
+        }
+
+        async function loadLeads() {
+            try {
+                const response = await fetch('/api/leads');
+                const data = await response.json();
+                
+                document.getElementById('totalLeads').textContent = data.count || 0;
+                
+                const tbody = document.getElementById('leadsTableBody');
+                
+                if (!data.leads || data.leads.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">No leads yet. Start a scrape to find leads!</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = data.leads.map(lead => `
+                    <tr>
+                        <td>${lead.id}</td>
+                        <td>${lead.title}</td>
+                        <td>${lead.keyword || '—'}</td>
+                        <td>${lead.location || '—'}</td>
+                        <td><span class="status-badge status-${lead.status}">${lead.status}</span></td>
+                        <td>${lead.assigned_contractor || 'Unassigned'}</td>
+                        <td class="action-buttons">
+                            <button class="btn-sm btn-view" onclick="viewLead(${lead.id})">View</button>
+                            <button class="btn-sm btn-edit" onclick="editLead(${lead.id})">Edit</button>
+                            <button class="btn-sm btn-delete" onclick="deleteLead(${lead.id})">Delete</button>
+                        </td>
+                    </tr>
+                `).join('');
+                
+            } catch (err) {
+                console.error('Error loading leads:', err);
+            }
+        }
+
+        function viewLead(id) {
+            window.location = '/lead/' + id;
+        }
+
+        function editLead(id) {
+            window.location = '/lead/' + id + '/edit';
+        }
+
+        function deleteLead(id) {
+            if (confirm('Delete this lead permanently?')) {
+                fetch(`/api/lead/${id}`, {
+                    method: 'DELETE'
+                }).then(r => r.json())
+                  .then(data => {
+                      if (data.success) {
+                          alert('✅ Lead deleted');
+                          loadLeads();
+                      } else {
+                          alert('❌ Error: ' + data.error);
+                      }
+                  });
+            }
+        }
+
+        // Initialize
+        loadKeywords();
+        loadLeads();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadLeads, 30000);
+    </script>
+</body>
+</html>
