@@ -680,7 +680,10 @@ def get_next_job():
     agent_name = request.args.get("agent")
     
     # Find pending job
-    job = ScrapeJob.query.filter_by(status="pending").first()
+    _src=request.args.get("source")
+    _q=ScrapeJob.query.filter_by(status="pending")
+    if _src: _q=_q.filter_by(source=_src)
+    job=_q.first()
     
     if not job:
         return jsonify({"job": None})
@@ -990,6 +993,6 @@ def revenue_dash():
     return render_template('revenue_dashboard.html')
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5003))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
 
 
