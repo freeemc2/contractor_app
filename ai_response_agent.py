@@ -1,140 +1,168 @@
 #!/usr/bin/env python3
 """
-AI Response Agent - FREE & OPEN SOURCE
-- Uses Ollama (local, no API costs)
-- Uses praw (Reddit API, free)
-- Responds to contractor leads
-- Qualifies leads through conversation
+AI Response Agent
+- PRAW posts replies to Reddit leads
+- Ollama generates personalized responses (free, local)
+- Conservative rate limiting to protect account
+- Only targets unresponded, high-quality Reddit leads
 """
-import os, sys, time, json, sqlite3, subprocess
-from datetime import datetime
+import os, sys, time, json, sqlite3, requests, logging
+from datetime import datetime, timezone
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler("/var/log/response_agent.log"),
+        logging.StreamHandler()
+    ]
+)
+log = logging.getLogger(__name__)
 
 try:
     import praw
-    REDDIT_OK = True
-except:
-    REDDIT_OK = False
-    print("⚠️  praw not installed - run: pip3 install praw --break-system-packages")
+except ImportError:
+    log.error("praw not installed: pip3 install praw --break-system-packages")
     sys.exit(1)
 
-class AIResponseAgent:
-    def __init__(self):
-        self.db = 'instance/contractor_leads.db'
-        self.model = 'llama3.2:3b'
-        
-        # Reddit API - FREE (get credentials at reddit.com/prefs/apps)
-        self.reddit = None  # Will set up with your credentials
-        
-    def get_pending_leads(self, limit=10):
-        """Get leads that need AI responses"""
-        conn = sqlite3.connect(self.db)
-        c = conn.cursor()
-        c.execute("""
-            SELECT id, source_url, title, description, post_text, keyword, location 
-            FROM leads 
-            WHERE source_url IS NOT NULL
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limit,))
-        
-        leads = []
-        for row in c.fetchall():
-            leads.append({
-                'id': row[0],
-                'url': row[1],
-                'title': row[2],
-                'description': row[3],
-                'post_text': row[4],
-                'trade': row[5],
-                'location': row[6]
-            })
-        return leads
-    
-    def ask_ollama(self, prompt):
-        """Use Ollama (FREE, local) to generate response"""
+DB = '/var/www/contractor_app/instance/contractor_leads.db'
+OLLAMA = 'http://localhost:11434/api/generate'
+MODEL = 'llama3.2:3b'
+MIN_SCORE = float(os.environ.get('MIN_SCORE_RESPOND', '6.5'))
+DELAY_BETWEEN = int(os.environ.get('RESPONSE_DELAY_SEC', '180'))   # 3 min between posts
+BATCH = int(os.environ.get('RESPONSE_BATCH', '5'))
+CYCLE_SLEEP = int(os.environ.get('RESPONSE_CYCLE_MIN', '30')) * 60  # 30 min between cycles
+
+
+def get_reddit():
+    client_id = os.environ.get('REDDIT_CLIENT_ID')
+    client_secret = os.environ.get('REDDIT_CLIENT_SECRET')
+    username = os.environ.get('REDDIT_USERNAME')
+    password = os.environ.get('REDDIT_PASSWORD')
+    if not all([client_id, client_secret, username, password]):
+        log.error("Missing REDDIT_* env vars")
+        sys.exit(1)
+    return praw.Reddit(
+        client_id=client_id,
+        client_secret=client_secret,
+        username=username,
+        password=password,
+        user_agent=f"ContractorLeadBot/1.0 by u/{username}"
+    )
+
+
+def ask_ollama(prompt):
+    try:
+        r = requests.post(OLLAMA, json={
+            'model': MODEL, 'prompt': prompt, 'stream': False
+        }, timeout=90)
+        r.raise_for_status()
+        return r.json().get('response', '').strip()
+    except Exception as e:
+        log.error(f"Ollama error: {e}")
+        return None
+
+
+def craft_response(lead):
+    prompt = (
+        f"A homeowner posted on Reddit asking for contractor help.\n"
+        f"Title: {lead['title']}\n"
+        f"Post: {str(lead['post_text'] or lead['description'] or '')[:400]}\n"
+        f"Trade needed: {lead['keyword']}\n"
+        f"Location: {lead['location']}\n\n"
+        f"Write a single helpful Reddit comment (2-3 sentences, under 80 words) that:\n"
+        f"- Acknowledges their specific need naturally\n"
+        f"- Mentions you can connect them with vetted licensed contractors in their area\n"
+        f"- Asks one qualifying question (when they need it, or scope of work)\n"
+        f"- Sounds like a helpful neighbor, NOT a salesperson\n"
+        f"Reply with only the comment text, nothing else."
+    )
+    return ask_ollama(prompt)
+
+
+def get_pending_leads(conn, limit):
+    rows = conn.execute("""
+        SELECT id, source_url, title, description, post_text, keyword, location, quality_score
+        FROM leads
+        WHERE source IN ('reddit','brave_reddit')
+          AND source_url LIKE '%reddit.com%'
+          AND (response_status IS NULL OR response_status = 'pending')
+          AND quality_score >= ?
+          AND active = 1
+        ORDER BY quality_score DESC, id DESC
+        LIMIT ?
+    """, (MIN_SCORE, limit)).fetchall()
+    return [{'id': r[0], 'url': r[1], 'title': r[2], 'description': r[3],
+             'post_text': r[4], 'keyword': r[5], 'location': r[6], 'score': r[7]}
+            for r in rows]
+
+
+def mark_responded(conn, lead_id, status='responded'):
+    conn.execute("UPDATE leads SET response_status=? WHERE id=?", (status, lead_id))
+    conn.commit()
+
+
+def run_cycle(reddit, conn):
+    leads = get_pending_leads(conn, BATCH)
+    if not leads:
+        log.info("No leads to respond to")
+        return 0
+
+    log.info(f"Processing {len(leads)} leads (min score {MIN_SCORE})")
+    responded = 0
+
+    for lead in leads:
+        log.info(f"Lead #{lead['id']} score={lead['score']} | {lead['title'][:60]}")
+
+        response_text = craft_response(lead)
+        if not response_text:
+            log.warning(f"Lead #{lead['id']}: Ollama returned nothing, skipping")
+            mark_responded(conn, lead['id'], 'response_failed')
+            continue
+
+        log.info(f"Generated: {response_text[:100]}")
+
         try:
-            result = subprocess.run(
-                ['ollama', 'run', self.model, prompt],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            return result.stdout.strip()
-        except Exception as e:
-            print(f"Ollama error: {e}")
-            return None
-    
-    def craft_response(self, lead):
-        """Craft personalized response using AI"""
-        prompt = f"""You are a professional contractor service assistant. 
-
-A homeowner posted this on Reddit:
-Title: {lead['title']}
-Post: {lead['description'][:300]}
-
-They need help with: {lead['trade']}
-Location: {lead['location']}
-
-Write a brief, helpful response (2-3 sentences) that:
-1. Acknowledges their need
-2. Offers to connect them with licensed contractors
-3. Asks when they need the work done
-4. Sounds friendly and professional, not salesy
-
-Keep it under 100 words. Do NOT include your role description in the response."""
-
-        response = self.ask_ollama(prompt)
-        return response
-    
-    def post_to_reddit(self, lead, response_text):
-        """Post AI-generated response to Reddit (requires Reddit API setup)"""
-        if not self.reddit:
-            print("⚠️  Reddit API not configured yet")
-            print(f"   Would post to: {lead['url']}")
-            print(f"   Response: {response_text}")
-            return False
-        
-        # TODO: Implement Reddit posting with praw
-        # This requires Reddit API credentials
-        return True
-    
-    def run(self, dry_run=True):
-        """Main agent loop"""
-        print(f"\n{'='*60}")
-        print(f"🤖 AI Response Agent - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"{'='*60}")
-        print(f"Model: {self.model} (Ollama - FREE)")
-        print(f"Mode: {'DRY RUN (testing)' if dry_run else 'LIVE (posting to Reddit)'}")
-        
-        # Get pending leads
-        leads = self.get_pending_leads(limit=5)
-        print(f"\n📋 Processing {len(leads)} leads...")
-        
-        for i, lead in enumerate(leads, 1):
-            print(f"\n--- Lead #{lead['id']} ({i}/{len(leads)}) ---")
-            print(f"Title: {lead['title'][:60]}...")
-            print(f"Trade: {lead['trade']} | Location: {lead['location']}")
-            
-            # Generate AI response
-            print("🤖 Generating response...")
-            response = self.craft_response(lead)
-            
-            if response:
-                print(f"\n✅ Generated response:")
-                print(f"   {response}")
-                
-                if not dry_run:
-                    # Post to Reddit (when configured)
-                    self.post_to_reddit(lead, response)
+            submission = reddit.submission(url=lead['url'])
+            submission.reply(response_text)
+            mark_responded(conn, lead['id'], 'responded')
+            log.info(f"Posted reply to {lead['url']}")
+            responded += 1
+        except praw.exceptions.RedditAPIException as e:
+            code = e.items[0].error_type if e.items else str(e)
+            log.error(f"Reddit API error: {code} — {e}")
+            if 'RATELIMIT' in str(e).upper():
+                log.warning("Rate limited — sleeping 10 min")
+                time.sleep(600)
+            elif 'DELETED' in str(e).upper() or 'NOT_FOUND' in str(e).upper():
+                mark_responded(conn, lead['id'], 'post_deleted')
             else:
-                print("❌ Failed to generate response")
-            
-            time.sleep(2)  # Rate limiting
-        
-        print(f"\n{'='*60}")
-        print(f"✅ Processed {len(leads)} leads")
-        print(f"{'='*60}\n")
+                mark_responded(conn, lead['id'], 'error')
+        except Exception as e:
+            log.error(f"Failed to post: {e}")
+            mark_responded(conn, lead['id'], 'error')
+
+        if responded < len(leads):
+            log.info(f"Waiting {DELAY_BETWEEN}s before next post...")
+            time.sleep(DELAY_BETWEEN)
+
+    return responded
+
 
 if __name__ == '__main__':
-    agent = AIResponseAgent()
-    agent.run(dry_run=True)  # Start in test mode
+    log.info("Response Agent starting")
+    log.info(f"Min score: {MIN_SCORE} | Delay: {DELAY_BETWEEN}s | Batch: {BATCH} | Cycle: {CYCLE_SLEEP//60}min")
+
+    reddit = get_reddit()
+    log.info(f"Reddit auth: u/{reddit.user.me().name}")
+
+    conn = sqlite3.connect(DB)
+
+    while True:
+        try:
+            n = run_cycle(reddit, conn)
+            log.info(f"Cycle done: {n} responses posted")
+        except Exception as e:
+            log.error(f"Cycle error: {e}")
+        log.info(f"Sleeping {CYCLE_SLEEP//60} min until next cycle")
+        time.sleep(CYCLE_SLEEP)
