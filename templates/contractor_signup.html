@@ -190,7 +190,7 @@
             const data = Object.fromEntries(formData);
             
             try {
-                const res = await fetch('/contractor/signup', {
+                const res = await fetch('/register', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(data)
@@ -199,8 +199,7 @@
                 const result = await res.json();
                 
                 if (result.success) {
-                    alert('✅ Success! Check your email for next steps.');
-                    window.location = '/contractor/dashboard';
+                    window.location = result.checkout_url || '/contractor/login';
                 } else {
                     alert('❌ Error: ' + (result.error || 'Signup failed'));
                 }

@@ -175,6 +175,7 @@ class User(db.Model):
     stripe_customer_id = db.Column(db.String(255))
     stripe_subscription_id = db.Column(db.String(255))
     subscription_status = db.Column(db.String(50), default="trial")
+    background_check_paid = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     
     @property
@@ -183,7 +184,7 @@ class User(db.Model):
     
     @property
     def has_access(self):
-        return self.trial_active or self.subscription_status == "active"
+        return self.is_admin or self.background_check_paid or self.trial_active or self.subscription_status == "active"
 
 
 class Lead(db.Model):
@@ -332,12 +333,25 @@ def register():
         db.session.add(user)
         db.session.commit()
         
-        session["user_id"] = user.id
-        log.info(f"New user registered: {user.email}")
-        
-        return jsonify({"success": True, "redirect": url_for("dashboard")})
-    
-    return render_template("register.html")
+        checkout_url=None
+        if STRIPE_PRICE_ID and stripe.api_key:
+            try:
+                cust=stripe.Customer.create(email=user.email)
+                user.stripe_customer_id=cust.id
+                chk=stripe.checkout.Session.create(
+                    customer=cust.id,payment_method_types=["card"],
+                    line_items=[{"price":STRIPE_PRICE_ID,"quantity":1}],
+                    mode="payment",
+                    success_url=f"https://api.elevatehomeprogram.com/payment/bgcheck/success?uid={user.id}",
+                    cancel_url="https://api.elevatehomeprogram.com/contractor/login",
+                    metadata={"user_id":str(user.id)})
+                user.stripe_session_id=chk.id; checkout_url=chk.url
+                db.session.commit()
+            except Exception as e: log.error(f"Stripe register: {e}")
+        session["user_id"]=user.id
+        log.info(f"Contractor registered: {user.email}")
+        return jsonify({"success":True,"checkout_url":checkout_url or "/contractor/login"})
+    return render_template("contractor_signup.html")
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -526,8 +540,8 @@ def send_payment_link(lead_id):
                 }
             ],
             mode="payment",
-            success_url=f"http://localhost:5003/payment/success?session_id={{CHECKOUT_SESSION_ID}}&lead_id={lead_id}",
-            cancel_url=f"http://localhost:5003/payment/cancel",
+            success_url=f"https://api.elevatehomeprogram.com/payment/success?session_id={{CHECKOUT_SESSION_ID}}&lead_id={lead_id}",
+            cancel_url=f"https://api.elevatehomeprogram.com/payment/cancel",
         )
         
         lead.deposit_amount = 50.00
@@ -982,11 +996,34 @@ def contractor_login():
         return render_template('contractor_login.html')
     data = request.get_json()
     email, password = data.get('email'), data.get('password')
-    user = User.query.filter_by(email=email, role='contractor').first()
-    if user and user.check_password(password):
-        session['user_id'], session['role'] = user.id, 'contractor'
+    user = User.query.filter_by(email=email).first()
+    if user and not user.is_admin and check_password_hash(user.password_hash, password):
+        session['user_id'] = user.id
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+
+@app.route('/payment/bgcheck/success')
+def bgcheck_success():
+    uid=request.args.get('uid')
+    if uid:
+        user=User.query.get(int(uid))
+        if user:
+            user.background_check_paid=True
+            user.subscription_status='active'
+            db.session.commit()
+            session['user_id']=user.id
+            return redirect(url_for('contractor_portal'))
+    return redirect(url_for('contractor_login'))
+
+@app.route('/contractor/portal')
+def contractor_portal():
+    uid=session.get('user_id')
+    if not uid: return redirect(url_for('contractor_login'))
+    user=User.query.get(uid)
+    if not user or user.is_admin: return redirect(url_for('contractor_login'))
+    if not user.background_check_paid and not user.trial_active:
+        return redirect(url_for('contractor_login'))
+    return render_template('contractor_portal.html', user=user)
 
 @app.route('/revenue')
 def revenue_dash():
