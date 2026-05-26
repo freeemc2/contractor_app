@@ -89,31 +89,33 @@
     color: #6b7280;
   }
   .signup-link a { color: #2563eb; font-weight: 600; text-decoration: none; }
-</style>
+.lang-toggle{position:fixed;top:16px;right:16px;display:flex;background:rgba(255,255,255,.1);border-radius:20px;border:1px solid rgba(255,255,255,.2);z-index:100}.lang-btn{padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:transparent;color:rgba(255,255,255,.6)}.lang-btn.active{background:white;color:#1e3a5f;border-radius:20px}</style>
 </head>
 <body>
+<div class="lang-toggle"><button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button><button class="lang-btn" id="btn-es" onclick="setLang('es')">ES</button></div>
 <div class="card">
   <div class="logo">
     <div class="logo-icon">&#128296;</div>
-    <h1>Contractor Portal</h1>
-    <p>Sign in to view your leads and jobs</p>
+    <h1 data-en="Contractor Portal" data-es="Portal del Contratista">Contractor Portal</h1>
+    <p data-en="Sign in to view your leads and jobs" data-es="Inicia sesión para ver tus contactos y trabajos">Sign in to view your leads and jobs</p>
   </div>
   <div class="error" id="err"></div>
   <form id="form">
-    <label>Email Address</label>
+    <label data-en="Email Address" data-es="Correo Electrónico">Email Address</label>
     <input type="email" id="email" placeholder="you@example.com" required autofocus>
-    <label>Password</label>
+    <label data-en="Password" data-es="Contraseña">Password</label>
     <input type="password" id="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" required>
     <button type="submit" id="btn">Access My Portal</button>
   </form>
   <div class="signup-link">
-    Not a contractor yet? <a href="/register">Join the network</a>
+    Not a contractor yet? <a href="/register" data-en="Join the network" data-es="Únete a la red">Join the network</a>
   </div>
   <div class="footer">
     <a href="/login">Admin Login</a>
   </div>
 </div>
 <script>
+function setLang(lang){document.querySelectorAll("[data-en]").forEach(el=>{el.textContent=el.getAttribute("data-"+lang);});document.getElementById("btn-en").classList.toggle("active",lang==="en");document.getElementById("btn-es").classList.toggle("active",lang==="es");localStorage.setItem("lang",lang);}const _sl=localStorage.getItem("lang");if(_sl==="es")setLang("es");
 document.getElementById('form').onsubmit = async (e) => {
   e.preventDefault();
   const btn = document.getElementById('btn');

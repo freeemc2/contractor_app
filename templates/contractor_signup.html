@@ -106,12 +106,13 @@
             font-weight: bold;
             margin-right: 10px;
         }
-    </style>
+    .lang-toggle{position:fixed;top:16px;right:16px;display:flex;background:rgba(255,255,255,.15);border-radius:20px;border:1px solid rgba(255,255,255,.3);z-index:100}.lang-btn{padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:transparent;color:rgba(255,255,255,.7)}.lang-btn.active{background:white;color:#667eea;border-radius:20px}</style>
 </head>
 <body>
+<div class="lang-toggle"><button class="lang-btn active" id="btn-en" onclick="setLang('en')">EN</button><button class="lang-btn" id="btn-es" onclick="setLang('es')">ES</button></div>
     <div class="container">
-        <h1>🔨 Contractor Sign Up</h1>
-        <p class="subtitle">Get qualified leads for FREE. Only pay 10% when you close a job.</p>
+        <h1>🔨 <span data-en="Contractor Sign Up" data-es="Registro de Contratista">Contractor Sign Up</span></h1>
+        <p class="subtitle" data-en="Get qualified leads for FREE. Only pay 10% when you close a job." data-es="Obtén contactos calificados GRATIS. Solo paga 10% cuando cierres un trabajo.">Get qualified leads for FREE. Only pay 10% when you close a job.</p>
         
         <div class="highlight">
             <h3>💰 No Monthly Fees!</h3>
@@ -137,6 +138,11 @@
             <div class="form-group">
                 <label for="phone">Phone *</label>
                 <input type="tel" id="phone" name="phone" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password" data-en="Password *" data-es="Contraseña *">Password *</label>
+                <input type="password" id="password" name="password" required minlength="8">
             </div>
 
             <div class="form-group">
@@ -166,11 +172,11 @@
                 <input type="text" id="territory" name="territory" placeholder="e.g., North Port, Sarasota County" required>
             </div>
 
-            <button type="submit" class="btn">🚀 Start Getting Free Leads</button>
+            <button type="submit" class="btn" id="submitBtn"><span data-en="🚀 Start Getting Free Leads" data-es="🚀 Empezar a Recibir Contactos">🚀 Start Getting Free Leads</span></button>
         </form>
 
         <div class="features">
-            <h3>Why Join?</h3>
+            <h3 data-en="Why Join?" data-es="¿Por Qué Unirte?">Why Join?</h3>
             <ul>
                 <li>FREE qualified leads delivered daily</li>
                 <li>No monthly fees or subscriptions</li>
@@ -183,6 +189,14 @@
     </div>
 
     <script>
+function setLang(lang){
+  document.querySelectorAll('[data-en]').forEach(el=>{el.textContent=el.getAttribute('data-'+lang);});
+  document.getElementById('btn-en').classList.toggle('active',lang==='en');
+  document.getElementById('btn-es').classList.toggle('active',lang==='es');
+  localStorage.setItem('lang',lang);
+}
+const _sl=localStorage.getItem('lang');if(_sl==='es')setLang('es');
+
         document.getElementById('signupForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
